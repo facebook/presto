@@ -94,12 +94,12 @@ import com.facebook.presto.sql.tree.With;
 import com.facebook.presto.sql.tree.WithQuery;
 import com.google.common.base.Joiner;
 import com.google.common.base.Strings;
+import com.google.common.collect.Streams;
 
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.sql.ExpressionFormatter.formatExpression;
@@ -114,7 +114,6 @@ import static java.util.stream.Collectors.joining;
 public final class SqlFormatter
 {
     private static final String INDENT = "   ";
-    private static final Pattern NAME_PATTERN = Pattern.compile("[a-z_][a-z0-9_]*");
 
     private SqlFormatter() {}
 
@@ -843,18 +842,12 @@ public final class SqlFormatter
             return " WITH ( " + propertyList + " )";
         }
 
-        private static String formatName(String name)
-        {
-            if (NAME_PATTERN.matcher(name).matches()) {
-                return name;
-            }
-            return "\"" + name.replace("\"", "\"\"") + "\"";
-        }
-
         private static String formatName(QualifiedName name)
         {
-            return name.getOriginalParts().stream()
-                    .map(Formatter::formatName)
+            return Streams.zip(name.getOriginalParts().stream(),
+                    name.getIsDelimited().stream(),
+                    (actualName, isDelimited) ->
+                            (isDelimited ? "\"" : "") + actualName.replace("\"", "\"\"") + (isDelimited ? "\"" : ""))
                     .collect(joining("."));
         }
 

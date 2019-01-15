@@ -88,6 +88,7 @@ import static com.facebook.presto.metadata.MetadataListing.listSchemas;
 import static com.facebook.presto.metadata.MetadataUtil.createCatalogSchemaName;
 import static com.facebook.presto.metadata.MetadataUtil.createQualifiedName;
 import static com.facebook.presto.metadata.MetadataUtil.createQualifiedObjectName;
+import static com.facebook.presto.metadata.MetadataUtil.getDelimitedList;
 import static com.facebook.presto.spi.StandardErrorCode.INVALID_COLUMN_PROPERTY;
 import static com.facebook.presto.spi.StandardErrorCode.INVALID_TABLE_PROPERTY;
 import static com.facebook.presto.sql.ParsingUtil.createParsingOptions;
@@ -363,6 +364,7 @@ final class ShowQueriesRewrite
         {
             QualifiedObjectName objectName = createQualifiedObjectName(session, node, node.getName());
             Optional<ViewDefinition> viewDefinition = metadata.getView(session, objectName);
+            List<Boolean> isDelimitedList = getDelimitedList(node.getName());
 
             if (node.getType() == VIEW) {
                 if (!viewDefinition.isPresent()) {
@@ -373,7 +375,7 @@ final class ShowQueriesRewrite
                 }
 
                 Query query = parseView(viewDefinition.get().getOriginalSql(), objectName, node);
-                String sql = formatSql(new CreateView(createQualifiedName(objectName), query, false), Optional.of(parameters)).trim();
+                String sql = formatSql(new CreateView(createQualifiedName(objectName, isDelimitedList), query, false), Optional.of(parameters)).trim();
                 return singleValueQuery("Create View", sql);
             }
 
@@ -404,7 +406,7 @@ final class ShowQueriesRewrite
                 List<Property> propertyNodes = buildProperties(objectName, Optional.empty(), INVALID_TABLE_PROPERTY, properties, allTableProperties);
 
                 CreateTable createTable = new CreateTable(
-                        QualifiedName.of(objectName.getCatalogName(), objectName.getSchemaName(), objectName.getObjectName()),
+                        createQualifiedName(objectName, isDelimitedList),
                         columns,
                         false,
                         propertyNodes,

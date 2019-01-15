@@ -137,9 +137,20 @@ public final class MetadataUtil
         return new QualifiedObjectName(catalogName, schemaName, objectName);
     }
 
-    public static QualifiedName createQualifiedName(QualifiedObjectName name)
+    public static List<Boolean> getDelimitedList(QualifiedName name)
     {
-        return QualifiedName.of(name.getCatalogName(), name.getSchemaName(), name.getObjectName());
+        ImmutableList.Builder<Boolean> builder = ImmutableList.builder();
+        List<Boolean> isDelimitedList = Lists.reverse(name.getIsDelimited());
+        builder.add(isDelimitedList.size() > 2 ? isDelimitedList.get(2) : false);
+        builder.add(isDelimitedList.size() > 1 ? isDelimitedList.get(1) : false);
+        builder.add(isDelimitedList.get(0));
+        return builder.build();
+    }
+
+    public static QualifiedName createQualifiedName(QualifiedObjectName name, List<Boolean> isDelimited)
+    {
+        return QualifiedName.of(ImmutableList.of(name.getCatalogName(), name.getSchemaName(), name.getObjectName()),
+                ImmutableList.copyOf(isDelimited));
     }
 
     public static boolean tableExists(Metadata metadata, Session session, String table)

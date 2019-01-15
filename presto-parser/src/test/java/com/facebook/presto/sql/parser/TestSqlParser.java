@@ -681,7 +681,8 @@ public class TestSqlParser
     {
         assertStatement("SHOW TABLES", new ShowTables(Optional.empty(), Optional.empty(), Optional.empty()));
         assertStatement("SHOW TABLES FROM a", new ShowTables(Optional.of(QualifiedName.of("a")), Optional.empty(), Optional.empty()));
-        assertStatement("SHOW TABLES FROM \"awesome schema\"", new ShowTables(Optional.of(QualifiedName.of("awesome schema")), Optional.empty(), Optional.empty()));
+        assertStatement("SHOW TABLES FROM \"awesome schema\"", new ShowTables(Optional.of(QualifiedName.of(ImmutableList.of("awesome schema"), ImmutableList.of(true))),
+                Optional.empty(), Optional.empty()));
         assertStatement("SHOW TABLES IN a LIKE '%$_%' ESCAPE '$'", new ShowTables(Optional.of(QualifiedName.of("a")), Optional.of("%$_%"), Optional.of("$")));
     }
 
@@ -690,8 +691,8 @@ public class TestSqlParser
     {
         assertStatement("SHOW COLUMNS FROM a", new ShowColumns(QualifiedName.of("a")));
         assertStatement("SHOW COLUMNS FROM a.b", new ShowColumns(QualifiedName.of("a", "b")));
-        assertStatement("SHOW COLUMNS FROM \"awesome table\"", new ShowColumns(QualifiedName.of("awesome table")));
-        assertStatement("SHOW COLUMNS FROM \"awesome schema\".\"awesome table\"", new ShowColumns(QualifiedName.of("awesome schema", "awesome table")));
+        assertStatement("SHOW COLUMNS FROM \"awesome table\"", new ShowColumns(QualifiedName.of(ImmutableList.of("awesome table"), ImmutableList.of(true))));
+        assertStatement("SHOW COLUMNS FROM \"awesome schema\".\"awesome table\"", new ShowColumns(QualifiedName.of(ImmutableList.of("awesome schema", "awesome table"), ImmutableList.of(true, true))));
     }
 
     @Test
@@ -975,7 +976,8 @@ public class TestSqlParser
                                 new Property(new Identifier("b"), new LongLiteral("123")))));
 
         assertStatement("CREATE SCHEMA \"some name that contains space\"",
-                new CreateSchema(QualifiedName.of("some name that contains space"), false, ImmutableList.of()));
+                new CreateSchema(QualifiedName.of(ImmutableList.of("some name that contains space"), ImmutableList.of(true)),
+                        false, ImmutableList.of()));
     }
 
     @Test
@@ -994,7 +996,7 @@ public class TestSqlParser
                 new DropSchema(QualifiedName.of("test"), true, false));
 
         assertStatement("DROP SCHEMA \"some schema that contains space\"",
-                new DropSchema(QualifiedName.of("some schema that contains space"), false, false));
+                new DropSchema(QualifiedName.of(ImmutableList.of("some schema that contains space"), ImmutableList.of(true)), false, false));
     }
 
     @Test
@@ -1007,7 +1009,8 @@ public class TestSqlParser
                 new RenameSchema(QualifiedName.of("foo", "bar"), identifier("baz")));
 
         assertStatement("ALTER SCHEMA \"awesome schema\".\"awesome table\" RENAME TO \"even more awesome table\"",
-                new RenameSchema(QualifiedName.of("awesome schema", "awesome table"), quotedIdentifier("even more awesome table")));
+                new RenameSchema(QualifiedName.of(ImmutableList.of("awesome schema", "awesome table"), ImmutableList.of(true, true)),
+                        quotedIdentifier("even more awesome table")));
     }
 
     @Test
@@ -1308,7 +1311,7 @@ public class TestSqlParser
     public void testDelete()
     {
         assertStatement("DELETE FROM t", new Delete(table(QualifiedName.of("t")), Optional.empty()));
-        assertStatement("DELETE FROM \"awesome table\"", new Delete(table(QualifiedName.of("awesome table")), Optional.empty()));
+        assertStatement("DELETE FROM \"awesome table\"", new Delete(table(QualifiedName.of(ImmutableList.of("awesome table"), ImmutableList.of(true))), Optional.empty()));
 
         assertStatement("DELETE FROM t WHERE a = b", new Delete(table(QualifiedName.of("t")), Optional.of(
                 new ComparisonExpression(ComparisonExpression.Operator.EQUAL,
@@ -1339,7 +1342,7 @@ public class TestSqlParser
     public void testDropColumn()
     {
         assertStatement("ALTER TABLE foo.t DROP COLUMN c", new DropColumn(QualifiedName.of("foo", "t"), identifier("c")));
-        assertStatement("ALTER TABLE \"t x\" DROP COLUMN \"c d\"", new DropColumn(QualifiedName.of("t x"), quotedIdentifier("c d")));
+        assertStatement("ALTER TABLE \"t x\" DROP COLUMN \"c d\"", new DropColumn(QualifiedName.of(ImmutableList.of("t x"), ImmutableList.of(true)), quotedIdentifier("c d")));
     }
 
     @Test
@@ -1351,8 +1354,8 @@ public class TestSqlParser
         assertStatement("CREATE OR REPLACE VIEW a AS SELECT * FROM t", new CreateView(QualifiedName.of("a"), query, true));
 
         assertStatement("CREATE VIEW bar.foo AS SELECT * FROM t", new CreateView(QualifiedName.of("bar", "foo"), query, false));
-        assertStatement("CREATE VIEW \"awesome view\" AS SELECT * FROM t", new CreateView(QualifiedName.of("awesome view"), query, false));
-        assertStatement("CREATE VIEW \"awesome schema\".\"awesome view\" AS SELECT * FROM t", new CreateView(QualifiedName.of("awesome schema", "awesome view"), query, false));
+        assertStatement("CREATE VIEW \"awesome view\" AS SELECT * FROM t", new CreateView(QualifiedName.of(ImmutableList.of("awesome view"), ImmutableList.of(true)), query, false));
+        assertStatement("CREATE VIEW \"awesome schema\".\"awesome view\" AS SELECT * FROM t", new CreateView(QualifiedName.of(ImmutableList.of("awesome schema", "awesome view"), ImmutableList.of(true, true)), query, false));
     }
 
     @Test
