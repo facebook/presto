@@ -1830,11 +1830,15 @@ class AstBuilder
 
     private QualifiedName getQualifiedName(SqlBaseParser.QualifiedNameContext context)
     {
-        List<String> parts = visit(context.identifier(), Identifier.class).stream()
-                .map(Identifier::getValue) // TODO: preserve quotedness
-                .collect(Collectors.toList());
+        ImmutableList.Builder<String> originalPartsBuilder = ImmutableList.builder();
+        ImmutableList.Builder<Boolean> isDelimitedBuilder = ImmutableList.builder();
+        visit(context.identifier(), Identifier.class)
+                .forEach(identifier -> {
+                    originalPartsBuilder.add(identifier.getValue());
+                    isDelimitedBuilder.add(identifier.isDelimited());
+                });
 
-        return QualifiedName.of(parts);
+        return QualifiedName.of(originalPartsBuilder.build(), isDelimitedBuilder.build());
     }
 
     private static boolean isDistinct(SqlBaseParser.SetQuantifierContext setQuantifier)

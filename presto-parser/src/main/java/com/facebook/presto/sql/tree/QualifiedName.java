@@ -24,6 +24,7 @@ import java.util.Optional;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.collect.Iterables.isEmpty;
 import static com.google.common.collect.Iterables.transform;
+import static java.util.Collections.nCopies;
 import static java.util.Locale.ENGLISH;
 import static java.util.Objects.requireNonNull;
 
@@ -31,6 +32,7 @@ public class QualifiedName
 {
     private final List<String> parts;
     private final List<String> originalParts;
+    private final List<Boolean> isDelimited;
 
     public static QualifiedName of(String first, String... rest)
     {
@@ -50,13 +52,23 @@ public class QualifiedName
         checkArgument(!isEmpty(originalParts), "originalParts is empty");
         List<String> parts = ImmutableList.copyOf(transform(originalParts, part -> part.toLowerCase(ENGLISH)));
 
-        return new QualifiedName(ImmutableList.copyOf(originalParts), parts);
+        return new QualifiedName(ImmutableList.copyOf(originalParts), parts, nCopies(parts.size(), false));
     }
 
-    private QualifiedName(List<String> originalParts, List<String> parts)
+    public static QualifiedName of(Iterable<String> originalParts, Iterable<Boolean> isDelimited)
+    {
+        requireNonNull(originalParts, "originalParts is null");
+        checkArgument(!isEmpty(originalParts), "originalParts is empty");
+        List<String> parts = ImmutableList.copyOf(transform(originalParts, part -> part.toLowerCase(ENGLISH)));
+
+        return new QualifiedName(ImmutableList.copyOf(originalParts), parts, ImmutableList.copyOf(isDelimited));
+    }
+
+    private QualifiedName(List<String> originalParts, List<String> parts, List<Boolean> isDelimited)
     {
         this.originalParts = originalParts;
         this.parts = parts;
+        this.isDelimited = isDelimited;
     }
 
     public List<String> getParts()
@@ -67,6 +79,11 @@ public class QualifiedName
     public List<String> getOriginalParts()
     {
         return originalParts;
+    }
+
+    public List<Boolean> getIsDelimited()
+    {
+        return isDelimited;
     }
 
     @Override
@@ -86,7 +103,7 @@ public class QualifiedName
         }
 
         List<String> subList = parts.subList(0, parts.size() - 1);
-        return Optional.of(new QualifiedName(subList, subList));
+        return Optional.of(new QualifiedName(subList, subList, isDelimited.subList(0, parts.size() - 1)));
     }
 
     public boolean hasSuffix(QualifiedName suffix)
