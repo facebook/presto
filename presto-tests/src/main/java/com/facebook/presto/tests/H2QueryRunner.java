@@ -65,6 +65,7 @@ import static com.facebook.presto.common.type.Chars.isCharType;
 import static com.facebook.presto.common.type.DateType.DATE;
 import static com.facebook.presto.common.type.DoubleType.DOUBLE;
 import static com.facebook.presto.common.type.IntegerType.INTEGER;
+import static com.facebook.presto.common.type.JsonType.JSON;
 import static com.facebook.presto.common.type.RealType.REAL;
 import static com.facebook.presto.common.type.SmallintType.SMALLINT;
 import static com.facebook.presto.common.type.TimeType.TIME;
@@ -74,6 +75,7 @@ import static com.facebook.presto.common.type.TimestampWithTimeZoneType.TIMESTAM
 import static com.facebook.presto.common.type.TinyintType.TINYINT;
 import static com.facebook.presto.common.type.VarbinaryType.VARBINARY;
 import static com.facebook.presto.common.type.Varchars.isVarcharType;
+import static com.facebook.presto.operator.scalar.JsonFunctions.jsonParse;
 import static com.facebook.presto.tpch.TpchMetadata.TINY_SCHEMA_NAME;
 import static com.facebook.presto.tpch.TpchRecordSet.createTpchRecordSet;
 import static com.facebook.presto.type.UnknownType.UNKNOWN;
@@ -82,6 +84,7 @@ import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Strings.padEnd;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.Lists.newArrayList;
+import static io.airlift.slice.Slices.utf8Slice;
 import static io.airlift.tpch.TpchTable.LINE_ITEM;
 import static io.airlift.tpch.TpchTable.NATION;
 import static io.airlift.tpch.TpchTable.ORDERS;
@@ -352,6 +355,15 @@ public class H2QueryRunner
                         }
                         else {
                             row.add(timestampValue);
+                        }
+                    }
+                    else if (JSON.equals(type)) {
+                        String stringValue = resultSet.getString(i);
+                        if (resultSet.wasNull()) {
+                            row.add(null);
+                        }
+                        else {
+                            row.add(jsonParse(utf8Slice(stringValue)).toStringUtf8());
                         }
                     }
                     else if (TIMESTAMP_WITH_TIME_ZONE.equals(type)) {
