@@ -39,6 +39,7 @@ public class PrestoSparkInternalNodeManager
             union(ImmutableSet.of(CURRENT_NODE), OTHER_NODES),
             ImmutableSet.of(),
             ImmutableSet.of(),
+            ImmutableSet.of(),
             ImmutableSet.of());
 
     @Override
@@ -66,6 +67,12 @@ public class PrestoSparkInternalNodeManager
     {
         // TODO: Hack to make System connector work
         return ImmutableSet.of(CURRENT_NODE);
+    }
+
+    @Override
+    public Set<InternalNode> getResourceManagers()
+    {
+        throw new UnsupportedOperationException();
     }
 
     @Override

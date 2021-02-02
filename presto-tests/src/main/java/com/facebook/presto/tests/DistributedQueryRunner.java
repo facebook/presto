@@ -73,6 +73,7 @@ import static com.facebook.presto.testing.TestingSession.TESTING_CATALOG;
 import static com.facebook.presto.testing.TestingSession.createBogusTestingCatalog;
 import static com.facebook.presto.tests.AbstractTestQueries.TEST_CATALOG_PROPERTIES;
 import static com.facebook.presto.tests.AbstractTestQueries.TEST_SYSTEM_PROPERTIES;
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Throwables.throwIfUnchecked;
 import static com.google.common.collect.Iterables.getOnlyElement;
@@ -90,15 +91,17 @@ public class DistributedQueryRunner
     private static final SqlParserOptions DEFAULT_SQL_PARSER_OPTIONS = new SqlParserOptions();
 
     private final TestingDiscoveryServer discoveryServer;
-    private final TestingPrestoServer coordinator;
+    private final List<TestingPrestoServer> coordinators;
     private final List<TestingPrestoServer> servers;
     private final List<Process> externalWorkers;
 
     private final Closer closer = Closer.create();
 
     private final TestingPrestoClient prestoClient;
+    private final List<TestingPrestoClient> prestoClients;
 
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    private Optional<TestingPrestoServer> resourceManager = Optional.empty();
 
     private final AtomicReference<Handle> testFunctionNamespacesHandle = new AtomicReference<>();
 
@@ -113,7 +116,7 @@ public class DistributedQueryRunner
     public DistributedQueryRunner(Session defaultSession, int nodeCount, Map<String, String> extraProperties)
             throws Exception
     {
-        this(defaultSession, nodeCount, extraProperties, ImmutableMap.of(), DEFAULT_SQL_PARSER_OPTIONS, ENVIRONMENT, Optional.empty(), Optional.empty());
+        this(false, defaultSession, nodeCount, 1, extraProperties, ImmutableMap.of(), DEFAULT_SQL_PARSER_OPTIONS, ENVIRONMENT, Optional.empty(), Optional.empty());
     }
 
     public static Builder builder(Session defaultSession)
@@ -122,8 +125,10 @@ public class DistributedQueryRunner
     }
 
     private DistributedQueryRunner(
+            boolean resourceManagerEnabled,
             Session defaultSession,
             int nodeCount,
+            int coordinatorCount,
             Map<String, String> extraProperties,
             Map<String, String> coordinatorProperties,
             SqlParserOptions parserOptions,
@@ -143,6 +148,7 @@ public class DistributedQueryRunner
             log.info("Discovery URL %s", discoveryUrl);
 
             ImmutableList.Builder<TestingPrestoServer> servers = ImmutableList.builder();
+            ImmutableList.Builder<TestingPrestoServer> coordinators = ImmutableList.builder();
             Map<String, String> extraCoordinatorProperties = new HashMap<>();
 
             if (externalWorkerLauncher.isPresent()) {
@@ -163,8 +169,8 @@ public class DistributedQueryRunner
             else {
                 externalWorkers = ImmutableList.of();
 
-                for (int i = 1; i < nodeCount; i++) {
-                    TestingPrestoServer worker = closer.register(createTestingPrestoServer(discoveryUrl, false, extraProperties, parserOptions, environment, baseDataDir));
+                for (int i = (coordinatorCount + (resourceManagerEnabled ? 1 : 0)); i < nodeCount; i++) {
+                    TestingPrestoServer worker = closer.register(createTestingPrestoServer(discoveryUrl, false, resourceManagerEnabled, false, extraProperties, parserOptions, environment, baseDataDir));
                     servers.add(worker);
                 }
             }
@@ -172,10 +178,20 @@ public class DistributedQueryRunner
             extraCoordinatorProperties.put("experimental.iterative-optimizer-enabled", "true");
             extraCoordinatorProperties.putAll(extraProperties);
             extraCoordinatorProperties.putAll(coordinatorProperties);
-            coordinator = closer.register(createTestingPrestoServer(discoveryUrl, true, extraCoordinatorProperties, parserOptions, environment, baseDataDir));
-            servers.add(coordinator);
+            for (int i = 0; i < coordinatorCount; i++) {
+                TestingPrestoServer coordinator = closer.register(createTestingPrestoServer(discoveryUrl, false, resourceManagerEnabled, true, extraCoordinatorProperties, parserOptions, environment, baseDataDir));
+                servers.add(coordinator);
+                coordinators.add(coordinator);
+                extraCoordinatorProperties.remove("http-server.http.port");
+            }
+
+            if (resourceManagerEnabled) {
+                resourceManager = Optional.of(closer.register(createTestingPrestoServer(discoveryUrl, true, resourceManagerEnabled, false, extraCoordinatorProperties, parserOptions, environment, baseDataDir)));
+                servers.add(resourceManager.get());
+            }
 
             this.servers = servers.build();
+            this.coordinators = coordinators.build();
         }
         catch (Exception e) {
             try {
@@ -187,12 +203,18 @@ public class DistributedQueryRunner
         }
 
         // copy session using property manager in coordinator
-        defaultSession = defaultSession.toSessionRepresentation().toSession(coordinator.getMetadata().getSessionPropertyManager());
-        this.prestoClient = closer.register(new TestingPrestoClient(coordinator, defaultSession));
+        defaultSession = defaultSession.toSessionRepresentation().toSession(coordinators.get(0).getMetadata().getSessionPropertyManager());
+
+        ImmutableList.Builder<TestingPrestoClient> prestoClientsBuilder = ImmutableList.builder();
+        for (int i = 0; i < coordinatorCount; i++) {
+            prestoClientsBuilder.add(closer.register(new TestingPrestoClient(coordinators.get(i), defaultSession)));
+        }
+        prestoClients = prestoClientsBuilder.build();
+        prestoClient = prestoClients.get(0);
 
         long start = nanoTime();
         while (!allNodesGloballyVisible()) {
-            Assertions.assertLessThan(nanosSince(start), new Duration(10, SECONDS));
+            Assertions.assertLessThan(nanosSince(start), new Duration(30, SECONDS));
             MILLISECONDS.sleep(10);
         }
         log.info("Announced servers in %s", nanosSince(start).convertToMostSuccinctTimeUnit());
@@ -214,7 +236,7 @@ public class DistributedQueryRunner
         }
     }
 
-    private static TestingPrestoServer createTestingPrestoServer(URI discoveryUri, boolean coordinator, Map<String, String> extraProperties, SqlParserOptions parserOptions, String environment, Optional<Path> baseDataDir)
+    private static TestingPrestoServer createTestingPrestoServer(URI discoveryUri, boolean resourceManager, boolean resourceManagerEnabled, boolean coordinator, Map<String, String> extraProperties, SqlParserOptions parserOptions, String environment, Optional<Path> baseDataDir)
             throws Exception
     {
         long start = nanoTime();
@@ -231,9 +253,9 @@ public class DistributedQueryRunner
         HashMap<String, String> properties = new HashMap<>(propertiesBuilder.build());
         properties.putAll(extraProperties);
 
-        TestingPrestoServer server = new TestingPrestoServer(coordinator, properties, environment, discoveryUri, parserOptions, ImmutableList.of(), baseDataDir);
+        TestingPrestoServer server = new TestingPrestoServer(resourceManager, resourceManagerEnabled, coordinator, properties, environment, discoveryUri, parserOptions, ImmutableList.of(), baseDataDir);
 
-        String nodeRole = coordinator ? "coordinator" : "worker";
+        String nodeRole = coordinator ? "coordinator" : resourceManager ? "resourceManager" : "worker";
         log.info("Created %s TestingPrestoServer in %s: %s", nodeRole, nanosSince(start).convertToMostSuccinctTimeUnit(), server.getBaseUrl());
 
         return server;
@@ -272,60 +294,80 @@ public class DistributedQueryRunner
     @Override
     public TransactionManager getTransactionManager()
     {
-        return coordinator.getTransactionManager();
+        checkState(coordinators.size() == 1, "Expected a single coordinator");
+        return coordinators.get(0).getTransactionManager();
     }
 
     @Override
     public Metadata getMetadata()
     {
-        return coordinator.getMetadata();
+        checkState(coordinators.size() == 1, "Expected a single coordinator");
+        return coordinators.get(0).getMetadata();
     }
 
     @Override
     public SplitManager getSplitManager()
     {
-        return coordinator.getSplitManager();
+        checkState(coordinators.size() == 1, "Expected a single coordinator");
+        return coordinators.get(0).getSplitManager();
     }
 
     @Override
     public PageSourceManager getPageSourceManager()
     {
-        return coordinator.getPageSourceManager();
+        checkState(coordinators.size() == 1, "Expected a single coordinator");
+        return coordinators.get(0).getPageSourceManager();
     }
 
     @Override
     public NodePartitioningManager getNodePartitioningManager()
     {
-        return coordinator.getNodePartitioningManager();
+        checkState(coordinators.size() == 1, "Expected a single coordinator");
+        return coordinators.get(0).getNodePartitioningManager();
     }
 
     @Override
     public ConnectorPlanOptimizerManager getPlanOptimizerManager()
     {
-        return coordinator.getPlanOptimizerManager();
+        checkState(coordinators.size() == 1, "Expected a single coordinator");
+        return coordinators.get(0).getPlanOptimizerManager();
     }
 
     @Override
     public StatsCalculator getStatsCalculator()
     {
-        return coordinator.getStatsCalculator();
+        checkState(coordinators.size() == 1, "Expected a single coordinator");
+        return coordinators.get(0).getStatsCalculator();
     }
 
     @Override
     public Optional<EventListener> getEventListener()
     {
-        return coordinator.getEventListener();
+        checkState(coordinators.size() == 1, "Expected a single coordinator");
+        return coordinators.get(0).getEventListener();
     }
 
     @Override
     public TestingAccessControlManager getAccessControl()
     {
-        return coordinator.getAccessControl();
+        checkState(coordinators.size() == 1, "Expected a single coordinator");
+        return coordinators.get(0).getAccessControl();
     }
 
     public TestingPrestoServer getCoordinator()
     {
-        return coordinator;
+        checkState(coordinators.size() == 1, "Expected a single coordinator");
+        return coordinators.get(0);
+    }
+
+    public List<TestingPrestoServer> getCoordinators()
+    {
+        return coordinators;
+    }
+
+    public Optional<TestingPrestoServer> getResourceManager()
+    {
+        return resourceManager;
     }
 
     public List<TestingPrestoServer> getServers()
@@ -497,28 +539,56 @@ public class DistributedQueryRunner
         return new MaterializedResultWithPlan(resultWithQueryId.getResult().toTestTypes(), getQueryPlan(resultWithQueryId.getQueryId()));
     }
 
+    public MaterializedResult execute(int coordinator, @Language("SQL") String sql)
+    {
+        checkArgument(coordinator >= 0 && coordinator < coordinators.size());
+        lock.readLock().lock();
+        try {
+            return prestoClients.get(coordinator).execute(sql).getResult();
+        }
+        finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    public MaterializedResult execute(int coordinator, Session session, @Language("SQL") String sql)
+    {
+        checkArgument(coordinator >= 0 && coordinator < coordinators.size());
+        lock.readLock().lock();
+        try {
+            return prestoClients.get(coordinator).execute(session, sql).getResult();
+        }
+        finally {
+            lock.readLock().unlock();
+        }
+    }
+
     @Override
     public Plan createPlan(Session session, String sql, WarningCollector warningCollector)
     {
         QueryId queryId = executeWithQueryId(session, sql).getQueryId();
         Plan queryPlan = getQueryPlan(queryId);
-        coordinator.getQueryManager().cancelQuery(queryId);
+        checkState(coordinators.size() == 1, "Expected a single coordinator");
+        coordinators.get(0).getQueryManager().cancelQuery(queryId);
         return queryPlan;
     }
 
     public List<BasicQueryInfo> getQueries()
     {
-        return coordinator.getQueryManager().getQueries();
+        checkState(coordinators.size() == 1, "Expected a single coordinator");
+        return coordinators.get(0).getQueryManager().getQueries();
     }
 
     public QueryInfo getQueryInfo(QueryId queryId)
     {
-        return coordinator.getQueryManager().getFullQueryInfo(queryId);
+        checkState(coordinators.size() == 1, "Expected a single coordinator");
+        return coordinators.get(0).getQueryManager().getFullQueryInfo(queryId);
     }
 
     public Plan getQueryPlan(QueryId queryId)
     {
-        return coordinator.getQueryPlan(queryId);
+        checkState(coordinators.size() == 1, "Expected a single coordinator");
+        return coordinators.get(0).getQueryPlan(queryId);
     }
 
     @Override
@@ -541,10 +611,12 @@ public class DistributedQueryRunner
 
     private void cancelAllQueries()
     {
-        QueryManager queryManager = coordinator.getQueryManager();
-        for (BasicQueryInfo queryInfo : queryManager.getQueries()) {
-            if (!queryInfo.getState().isDone()) {
-                queryManager.cancelQuery(queryInfo.getQueryId());
+        for (TestingPrestoServer coordinator : coordinators) {
+            QueryManager queryManager = coordinator.getQueryManager();
+            for (BasicQueryInfo queryInfo : queryManager.getQueries()) {
+                if (!queryInfo.getState().isDone()) {
+                    queryManager.cancelQuery(queryInfo.getQueryId());
+                }
             }
         }
     }
@@ -564,12 +636,14 @@ public class DistributedQueryRunner
     {
         private Session defaultSession;
         private int nodeCount = 4;
+        private int coordinatorCount = 1;
         private Map<String, String> extraProperties = ImmutableMap.of();
         private Map<String, String> coordinatorProperties = ImmutableMap.of();
         private SqlParserOptions parserOptions = DEFAULT_SQL_PARSER_OPTIONS;
         private String environment = ENVIRONMENT;
         private Optional<Path> baseDataDir = Optional.empty();
         private Optional<BiFunction<Integer, URI, Process>> externalWorkerLauncher = Optional.empty();
+        private boolean resourceManagerEnabled;
 
         protected Builder(Session defaultSession)
         {
@@ -586,6 +660,12 @@ public class DistributedQueryRunner
         public Builder setNodeCount(int nodeCount)
         {
             this.nodeCount = nodeCount;
+            return this;
+        }
+
+        public Builder setCoordinatorCount(int coordinatorCount)
+        {
+            this.coordinatorCount = coordinatorCount;
             return this;
         }
 
@@ -645,10 +725,16 @@ public class DistributedQueryRunner
             return this;
         }
 
+        public Builder setResourceManagerEnabled(boolean resourceManagerEnabled)
+        {
+            this.resourceManagerEnabled = resourceManagerEnabled;
+            return this;
+        }
+
         public DistributedQueryRunner build()
                 throws Exception
         {
-            return new DistributedQueryRunner(defaultSession, nodeCount, extraProperties, coordinatorProperties, parserOptions, environment, baseDataDir, externalWorkerLauncher);
+            return new DistributedQueryRunner(resourceManagerEnabled, defaultSession, nodeCount, coordinatorCount, extraProperties, coordinatorProperties, parserOptions, environment, baseDataDir, externalWorkerLauncher);
         }
     }
 }
