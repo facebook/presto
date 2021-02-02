@@ -21,6 +21,7 @@ import com.facebook.airlift.stats.GcMonitor;
 import com.facebook.airlift.stats.JmxGcMonitor;
 import com.facebook.airlift.stats.PauseMeter;
 import com.facebook.drift.client.address.AddressSelector;
+import com.facebook.drift.codec.utils.DefaultThriftCodecsModule;
 import com.facebook.drift.transport.netty.client.DriftNettyClientModule;
 import com.facebook.drift.transport.netty.server.DriftNettyServerModule;
 import com.facebook.presto.GroupByHashPageIndexerFactory;
@@ -107,6 +108,17 @@ import com.facebook.presto.operator.OperatorStats;
 import com.facebook.presto.operator.PagesIndex;
 import com.facebook.presto.operator.TableCommitContext;
 import com.facebook.presto.operator.index.IndexJoinLookupStats;
+import com.facebook.presto.resourcemanager.ClusterMemoryManagerService;
+import com.facebook.presto.resourcemanager.ClusterStatusSender;
+import com.facebook.presto.resourcemanager.ForResourceManager;
+import com.facebook.presto.resourcemanager.MemoryManagerService;
+import com.facebook.presto.resourcemanager.NoopResourceGroupService;
+import com.facebook.presto.resourcemanager.RandomResourceManagerAddressSelector;
+import com.facebook.presto.resourcemanager.ResourceGroupService;
+import com.facebook.presto.resourcemanager.ResourceManagerClient;
+import com.facebook.presto.resourcemanager.ResourceManagerClusterStatusSender;
+import com.facebook.presto.resourcemanager.ResourceManagerConfig;
+import com.facebook.presto.resourcemanager.ResourceManagerResourceGroupService;
 import com.facebook.presto.server.remotetask.HttpLocationFactory;
 import com.facebook.presto.server.thrift.FixedAddressSelector;
 import com.facebook.presto.server.thrift.ThriftServerInfoClient;
@@ -172,6 +184,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableList;
 import com.google.inject.Binder;
 import com.google.inject.Key;
+import com.google.inject.Module;
 import com.google.inject.Provides;
 import com.google.inject.Scopes;
 import io.airlift.slice.Slice;
@@ -203,6 +216,7 @@ import static com.facebook.presto.execution.scheduler.NodeSchedulerConfig.Networ
 import static com.facebook.presto.execution.scheduler.NodeSchedulerConfig.NetworkTopologyType.LEGACY;
 import static com.facebook.presto.server.smile.SmileCodecBinder.smileCodecBinder;
 import static com.facebook.presto.sql.analyzer.FeaturesConfig.TaskSpillingStrategy.PER_TASK_MEMORY_THRESHOLD;
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Strings.nullToEmpty;
 import static com.google.inject.multibindings.MapBinder.newMapBinder;
 import static com.google.inject.multibindings.Multibinder.newSetBinder;
@@ -231,7 +245,10 @@ public class ServerMainModule
     {
         ServerConfig serverConfig = buildConfigObject(ServerConfig.class);
 
-        if (serverConfig.isCoordinator()) {
+        if (serverConfig.isResourceManager()) {
+            install(new ResourceManagerModule());
+        }
+        else if (serverConfig.isCoordinator()) {
             install(new CoordinatorModule());
         }
         else {
@@ -319,8 +336,43 @@ public class ServerMainModule
         jaxrsBinder(binder).bind(TaskExecutorResource.class);
         newExporter(binder).export(TaskExecutorResource.class).withGeneratedName();
         binder.bind(TaskManagementExecutor.class).in(Scopes.SINGLETON);
+
+        install(new DefaultThriftCodecsModule());
         binder.bind(SqlTaskManager.class).in(Scopes.SINGLETON);
         binder.bind(TaskManager.class).to(Key.get(SqlTaskManager.class));
+
+        binder.bind(RandomResourceManagerAddressSelector.class).in(Scopes.SINGLETON);
+        driftClientBinder(binder)
+                .bindDriftClient(ResourceManagerClient.class, ForResourceManager.class)
+                .withAddressSelector((addressSelectorBinder, annotation, prefix) ->
+                        addressSelectorBinder.bind(AddressSelector.class).annotatedWith(annotation).to(RandomResourceManagerAddressSelector.class));
+        newOptionalBinder(binder, MemoryManagerService.class);
+        install(installModuleIf(
+                ServerConfig.class,
+                ServerConfig::isResourceManagerEnabled,
+                new Module()
+                {
+                    @Override
+                    public void configure(Binder moduleBinder)
+                    {
+                        configBinder(moduleBinder).bindConfig(ResourceManagerConfig.class);
+                        moduleBinder.bind(ClusterStatusSender.class).to(ResourceManagerClusterStatusSender.class).in(Scopes.SINGLETON);
+                        moduleBinder.bind(MemoryManagerService.class).to(ClusterMemoryManagerService.class).in(Scopes.SINGLETON);
+                        moduleBinder.bind(ResourceGroupService.class).to(ResourceManagerResourceGroupService.class).in(Scopes.SINGLETON);
+                    }
+
+                    @Provides
+                    @Singleton
+                    @ForResourceManager
+                    public ScheduledExecutorService createResourceManagerExecutor(ResourceManagerConfig config)
+                    {
+                        return createConcurrentScheduledExecutor("resource-manager-heartbeats", config.getHeartbeatConcurrency(), config.getHeartbeatThreads());
+                    }
+                },
+                moduleBinder -> {
+                    moduleBinder.bind(ClusterStatusSender.class).toInstance(execution -> {});
+                    moduleBinder.bind(ResourceGroupService.class).to(NoopResourceGroupService.class).in(Scopes.SINGLETON);
+                }));
 
         // memory revoking scheduler
         install(installModuleIf(
@@ -499,9 +551,12 @@ public class ServerMainModule
         binder.bind(NodeVersion.class).toInstance(nodeVersion);
 
         // presto announcement
+        checkArgument(!(serverConfig.isResourceManager() && serverConfig.isCoordinator()),
+                "Server cannot be configured as both resource manager and coordinator");
         discoveryBinder(binder).bindHttpAnnouncement("presto")
                 .addProperty("node_version", nodeVersion.toString())
                 .addProperty("coordinator", String.valueOf(serverConfig.isCoordinator()))
+                .addProperty("resource_manager", String.valueOf(serverConfig.isResourceManager()))
                 .addProperty("connectorIds", nullToEmpty(serverConfig.getDataSources()));
 
         // server info resource
