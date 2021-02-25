@@ -154,6 +154,7 @@ public class TestFeaturesConfig
                 .setWarnOnNoTableLayoutFilter("")
                 .setInlineSqlFunctions(true)
                 .setCheckAccessControlOnUtilizedColumnsOnly(false)
+                .setOptimizeUnionOverValues(true)
                 .setAllowWindowOrderByLiterals(true));
     }
 
@@ -261,6 +262,7 @@ public class TestFeaturesConfig
                 .put("inline-sql-functions", "false")
                 .put("check-access-control-on-utilized-columns-only", "true")
                 .put("optimizer.skip-redundant-sort", "false")
+                .put("optimize-union-over-values", "false")
                 .put("is-allow-window-order-by-literals", "false")
                 .build();
 
@@ -366,6 +368,7 @@ public class TestFeaturesConfig
                 .setInlineSqlFunctions(false)
                 .setCheckAccessControlOnUtilizedColumnsOnly(true)
                 .setSkipRedundantSort(false)
+                .setOptimizeUnionOverValues(false)
                 .setAllowWindowOrderByLiterals(false);
         assertFullMapping(properties, expected);
     }
