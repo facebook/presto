@@ -14,6 +14,7 @@
 package com.facebook.presto.spi.relation;
 
 import com.facebook.presto.common.type.Type;
+import com.facebook.presto.common.type.TypeWithName;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -37,7 +38,13 @@ public final class VariableReferenceExpression
             @JsonProperty("type") Type type)
     {
         this.name = requireNonNull(name, "name is null");
-        this.type = requireNonNull(type, "type is null");
+        requireNonNull(type, "type is null");
+        if (type instanceof TypeWithName) {
+            this.type = ((TypeWithName) type).getType();
+        }
+        else {
+            this.type = type;
+        }
     }
 
     @JsonProperty
@@ -50,6 +57,9 @@ public final class VariableReferenceExpression
     @JsonProperty
     public Type getType()
     {
+        if (type instanceof TypeWithName) {
+            return ((TypeWithName) type).getType();
+        }
         return type;
     }
 

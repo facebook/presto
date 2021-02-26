@@ -14,6 +14,7 @@
 package com.facebook.presto.spi.relation;
 
 import com.facebook.presto.common.type.Type;
+import com.facebook.presto.common.type.TypeWithName;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -51,6 +52,9 @@ public final class InputReferenceExpression
     @JsonProperty
     public Type getType()
     {
+        if (type instanceof TypeWithName) {
+            return ((TypeWithName) type).getType();
+        }
         return type;
     }
 
