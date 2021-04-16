@@ -23,6 +23,10 @@ import com.facebook.presto.execution.QueryPreparer;
 import com.facebook.presto.execution.resourceGroups.NoOpResourceGroupManager;
 import com.facebook.presto.execution.resourceGroups.ResourceGroupManager;
 import com.facebook.presto.failureDetector.FailureDetectorModule;
+import com.facebook.presto.resourcemanager.DistributedClusterStatsResource;
+import com.facebook.presto.resourcemanager.DistributedQueryResource;
+import com.facebook.presto.resourcemanager.ResourceManagerClusterStateProvider;
+import com.facebook.presto.resourcemanager.ResourceManagerServer;
 import com.facebook.presto.transaction.NoOpTransactionManager;
 import com.facebook.presto.transaction.TransactionManager;
 import com.google.inject.Binder;
@@ -37,6 +41,7 @@ import static com.facebook.airlift.http.client.HttpClientBinder.httpClientBinder
 import static com.facebook.airlift.jaxrs.JaxrsBinder.jaxrsBinder;
 import static com.facebook.airlift.json.JsonCodecBinder.jsonCodecBinder;
 import static com.facebook.airlift.json.smile.SmileCodecBinder.smileCodecBinder;
+import static com.facebook.drift.server.guice.DriftServerBinder.driftServerBinder;
 
 public class ResourceManagerModule
         extends AbstractConfigurationAwareModule
@@ -77,6 +82,14 @@ public class ResourceManagerModule
         smileCodecBinder(binder).bindSmileCodec(BasicQueryInfo.class);
 
         binder.bind(TransactionManager.class).to(NoOpTransactionManager.class);
+
+        binder.bind(ResourceManagerClusterStateProvider.class).in(Scopes.SINGLETON);
+        driftServerBinder(binder).bindService(ResourceManagerServer.class);
+
+        jaxrsBinder(binder).bind(DistributedQueryResource.class);
+        httpClientBinder(binder).bindHttpClient("queryInfo", ForQueryInfo.class);
+
+        jaxrsBinder(binder).bind(DistributedClusterStatsResource.class);
     }
 
     @Provides
