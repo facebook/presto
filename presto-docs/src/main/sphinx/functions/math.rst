@@ -85,6 +85,18 @@ Mathematical Functions
     The a, b parameters must be positive real numbers and value v must be a real value.
     The value v must lie on the interval [0, 1].
 
+.. function:: inverse_logistic_cdf(mu, s, p) -> double
+
+    Compute the inverse of the logistic cdf with given mu, s parameters for the cumulative
+    probability (p): P(N < n). The s parameter must be a positive real value.
+    The probability p must lie on the interval [0, 1].
+
+.. function:: logistic_cdf(mu, s, v) -> double
+
+    Compute the logistic cdf with given mu, s parameters:  P(N < v; mu, s).
+    The s parameter must be a positive real number and value v must be a real value.
+    The value v must lie on the interval [0, 1].
+
 .. function:: ln(x) -> double
 
     Returns the natural logarithm of ``x``.

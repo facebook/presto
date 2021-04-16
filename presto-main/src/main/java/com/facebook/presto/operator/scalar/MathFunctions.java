@@ -31,6 +31,7 @@ import com.facebook.presto.type.LiteralParameter;
 import com.google.common.primitives.Doubles;
 import io.airlift.slice.Slice;
 import org.apache.commons.math3.distribution.BetaDistribution;
+import org.apache.commons.math3.distribution.LogisticDistribution;
 import org.apache.commons.math3.special.Erf;
 
 import java.math.BigDecimal;
@@ -701,6 +702,33 @@ public final class MathFunctions
         checkCondition(a > 0, INVALID_FUNCTION_ARGUMENT, "a must be > 0");
         checkCondition(b > 0, INVALID_FUNCTION_ARGUMENT, "b must be > 0");
         BetaDistribution distribution = new BetaDistribution(null, a, b, BetaDistribution.DEFAULT_INVERSE_ABSOLUTE_ACCURACY);
+        return distribution.cumulativeProbability(value);
+    }
+
+    @Description("inverse of logistic cdf given mu, s parameters and probability")
+    @ScalarFunction
+    @SqlType(StandardTypes.DOUBLE)
+    public static double inverseLogisticCdf(
+            @SqlType(StandardTypes.DOUBLE) double mu,
+            @SqlType(StandardTypes.DOUBLE) double s,
+            @SqlType(StandardTypes.DOUBLE) double p)
+    {
+        checkCondition(p >= 0 && p <= 1, INVALID_FUNCTION_ARGUMENT, "p must be in the interval [0, 1]");
+        checkCondition(s > 0, INVALID_FUNCTION_ARGUMENT, "s must be > 0");
+        LogisticDistribution distribution = new LogisticDistribution(null, mu, s);
+        return distribution.inverseCumulativeProbability(p);
+    }
+
+    @Description("Beta cdf given the mu, s parameters and value")
+    @ScalarFunction
+    @SqlType(StandardTypes.DOUBLE)
+    public static double logisticCdf(
+            @SqlType(StandardTypes.DOUBLE) double mu,
+            @SqlType(StandardTypes.DOUBLE) double s,
+            @SqlType(StandardTypes.DOUBLE) double value)
+    {
+        checkCondition(s > 0, INVALID_FUNCTION_ARGUMENT, "s must be > 0");
+        LogisticDistribution distribution = new LogisticDistribution(null, mu, s);
         return distribution.cumulativeProbability(value);
     }
 
