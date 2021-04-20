@@ -499,7 +499,7 @@ public class InMemoryHiveMetastore
     @Override
     public Set<HivePrivilegeInfo> listTablePrivileges(String databaseName, String tableName, PrestoPrincipal principal)
     {
-        throw new UnsupportedOperationException();
+        return ImmutableSet.of();
     }
 
     @Override
