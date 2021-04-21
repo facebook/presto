@@ -1980,7 +1980,7 @@ public class HiveMetadata
                 }
                 else if (partitionUpdate.getUpdateMode() == NEW || partitionUpdate.getUpdateMode() == APPEND) {
                     ImmutableList<String> filenames = partitionUpdate.getFileWriteInfos().stream()
-                            .map(writeInfo -> writeInfo.getWriteFileName())
+                            .map(writeInfo -> writeInfo.getTargetFileName())
                             .collect(ImmutableList.toImmutableList());
                     // insert into unpartitioned table
                     metastore.finishInsertIntoExistingTable(
