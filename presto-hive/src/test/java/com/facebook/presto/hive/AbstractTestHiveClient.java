@@ -4236,6 +4236,8 @@ public abstract class AbstractTestHiveClient
 
             ConnectorTableHandle tableHandle = getTableHandle(metadata, tableName);
 
+            logAllFiles(listAllDataFiles(transaction, tableName.getSchemaName(), tableName.getTableName()));
+
             // "stage" insert data
             ConnectorInsertTableHandle insertTableHandle = metadata.beginInsert(session, tableHandle);
             ConnectorPageSink sink = pageSinkProvider.createPageSink(transaction.getTransactionHandle(), session, insertTableHandle, TEST_HIVE_PAGE_SINK_CONTEXT);
@@ -4243,7 +4245,12 @@ public abstract class AbstractTestHiveClient
                 sink.appendPage(overwriteData.toPage());
             }
             Collection<Slice> fragments = getFutureValue(sink.finish());
+
+            logAllFiles(listAllDataFiles(transaction, tableName.getSchemaName(), tableName.getTableName()));
+
             metadata.finishInsert(session, insertTableHandle, fragments, ImmutableList.of());
+
+            logAllFiles(listAllDataFiles(transaction, tableName.getSchemaName(), tableName.getTableName()));
 
             // statistics, visible from within transaction
             HiveBasicStatistics tableStatistics = getBasicStatisticsForTable(transaction, tableName);
@@ -4295,6 +4302,11 @@ public abstract class AbstractTestHiveClient
             assertEquals(statistics.getRowCount().getAsLong(), overwriteData.getRowCount());
             assertEquals(statistics.getFileCount().getAsLong(), 1L);
         }
+    }
+
+    private void logAllFiles(Set<String> files)
+    {
+        Logger.get(getClass()).info(files.toString());
     }
 
     // These are protected so extensions to the hive connector can replace the handle classes

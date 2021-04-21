@@ -1979,16 +1979,13 @@ public class HiveMetadata
                             partitionStatistics);
                 }
                 else if (partitionUpdate.getUpdateMode() == NEW || partitionUpdate.getUpdateMode() == APPEND) {
-                    ImmutableList<String> filenames = partitionUpdate.getFileWriteInfos().stream()
-                            .map(writeInfo -> writeInfo.getTargetFileName())
-                            .collect(ImmutableList.toImmutableList());
                     // insert into unpartitioned table
                     metastore.finishInsertIntoExistingTable(
                             session,
                             handle.getSchemaName(),
                             handle.getTableName(),
                             partitionUpdate.getWritePath(),
-                            filenames,
+                            getTargetFileNames(partitionUpdate.getFileWriteInfos()),
                             partitionStatistics);
                 }
                 else {
