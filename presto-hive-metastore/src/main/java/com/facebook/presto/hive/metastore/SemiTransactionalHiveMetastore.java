@@ -260,10 +260,9 @@ public class SemiTransactionalHiveMetastore
         switch (tableAction.getType()) {
             case ADD:
                 return TableSource.CREATED_IN_THIS_TRANSACTION;
-            case ALTER:
-                throw new IllegalStateException("Tables are never altered in the current implementation");
             case DROP:
                 throw new TableNotFoundException(new SchemaTableName(databaseName, tableName));
+            case ALTER:
             case INSERT_EXISTING:
                 return TableSource.PRE_EXISTING_TABLE;
             default:
