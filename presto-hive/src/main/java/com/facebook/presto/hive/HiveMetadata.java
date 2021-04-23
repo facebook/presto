@@ -1972,7 +1972,7 @@ public class HiveMetadata
 
                     // create the table with the new location
                     metastore.createTable(session,
-                            table.get(),   // table.isPresent() is true
+                            table.get(),
                             principalPrivileges,
                             Optional.of(partitionUpdate.getWritePath()),
                             false,
