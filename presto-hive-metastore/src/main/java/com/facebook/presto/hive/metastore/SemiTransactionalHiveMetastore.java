@@ -260,10 +260,9 @@ public class SemiTransactionalHiveMetastore
         switch (tableAction.getType()) {
             case ADD:
                 return TableSource.CREATED_IN_THIS_TRANSACTION;
-            case ALTER:
-                throw new IllegalStateException("Tables are never altered in the current implementation");
             case DROP:
                 throw new TableNotFoundException(new SchemaTableName(databaseName, tableName));
+            case ALTER:
             case INSERT_EXISTING:
                 return TableSource.PRE_EXISTING_TABLE;
             default:
@@ -383,7 +382,12 @@ public class SemiTransactionalHiveMetastore
         }
         switch (oldTableAction.getType()) {
             case DROP:
-                throw new PrestoException(TRANSACTION_CONFLICT, "Dropping and then recreating the same table in a transaction is not supported");
+                if (!oldTableAction.getContext().getIdentity().getUser().equals(session.getUser())) {
+                    throw new PrestoException(TRANSACTION_CONFLICT, "Operation on the same table with different user in the same transaction is not supported");
+                }
+                HdfsContext context = new HdfsContext(session, table.getDatabaseName(), table.getTableName());
+                tableActions.put(schemaTableName, new Action<>(ActionType.ALTER, tableAndMore, context));
+                break;
             case ADD:
             case ALTER:
             case INSERT_EXISTING:
@@ -968,7 +972,7 @@ public class SemiTransactionalHiveMetastore
                         committer.prepareDropTable(schemaTableName);
                         break;
                     case ALTER:
-                        committer.prepareAlterTable();
+                        committer.prepareAlterTable(action.getContext(), action.getData());
                         break;
                     case ADD:
                         committer.prepareAddTable(action.getContext(), action.getData());
@@ -1019,6 +1023,7 @@ public class SemiTransactionalHiveMetastore
             // We are moving on to metastore operations now.
 
             committer.executeAddTableOperations();
+            committer.executeAlterTableOperations();
             committer.executeAlterPartitionOperations();
             committer.executeAddPartitionOperations();
             committer.executeUpdateStatisticsOperations();
@@ -1039,6 +1044,7 @@ public class SemiTransactionalHiveMetastore
             committer.executeRenameTasksForAbort();
 
             // Partition directory must be put back before relevant metastore operation can be undone
+            committer.undoAlterTableOperations();
             committer.undoAlterPartitionOperations();
 
             rollbackShared();
@@ -1095,6 +1101,7 @@ public class SemiTransactionalHiveMetastore
 
         // Metastore
         private final List<CreateTableOperation> addTableOperations = new ArrayList<>();
+        private final List<AlterTableOperation> alterTableOperations = new ArrayList<>();
         private final Map<SchemaTableName, PartitionAdder> partitionAdders = new HashMap<>();
         private final List<AlterPartitionOperation> alterPartitionOperations = new ArrayList<>();
         private final List<UpdateStatisticsOperation> updateStatisticsOperations = new ArrayList<>();
@@ -1115,14 +1122,63 @@ public class SemiTransactionalHiveMetastore
                     () -> delegate.dropTable(schemaTableName.getSchemaName(), schemaTableName.getTableName(), true)));
         }
 
-        private void prepareAlterTable()
+        private void prepareAlterTable(HdfsContext context, TableAndMore tableAndMore)
         {
             deleteOnly = false;
 
-            // Currently, ALTER action is never constructed for tables. Dropping a table and then re-creating it
-            // in the same transaction is not supported now. The following line should be replaced with actual
-            // implementation when create after drop support is introduced for a table.
-            throw new UnsupportedOperationException("Dropping and then creating a table with the same name is not supported");
+            Table table = tableAndMore.getTable();
+            String targetLocation = table.getStorage().getLocation();
+            Table oldTable = delegate.getTable(table.getDatabaseName(), table.getTableName())
+                    .orElseThrow(() -> new PrestoException(TRANSACTION_CONFLICT, "The table that this transaction modified was deleted in another transaction. " + table.getDatabaseName() + "." + table.getTableName()));
+            String oldTableLocation = oldTable.getStorage().getLocation();
+            Path oldTablePath = new Path(oldTableLocation);
+
+            // Location of the old table and the new table can be different because we allow arbitrary directories through LocationService.
+            // If the location of the old table is the same as the location of the new table:
+            // * Rename the old data directory to a temporary path with a special suffix
+            // * Remember we will need to delete that directory at the end if transaction successfully commits
+            // * Remember we will need to undo the rename if transaction aborts
+            // Otherwise,
+            // * Remember we will need to delete the location of the old partition at the end if transaction successfully commits
+            if (targetLocation.equals(oldTableLocation)) {
+                String queryId = context.getQueryId().orElseThrow(() -> new IllegalArgumentException("query ID not present"));
+                Path oldTableStagingPath = new Path(oldTablePath.getParent(), "_temp_" + oldTablePath.getName() + "_" + queryId);
+                renameDirectory(
+                        context,
+                        hdfsEnvironment,
+                        oldTablePath,
+                        oldTableStagingPath,
+                        () -> renameTasksForAbort.add(new DirectoryRenameTask(context, oldTableStagingPath, oldTablePath)));
+                if (!skipDeletionForAlter) {
+                    deletionTasksForFinish.add(new DirectoryDeletionTask(context, oldTableStagingPath));
+                }
+            }
+            else {
+                if (!skipDeletionForAlter) {
+                    deletionTasksForFinish.add(new DirectoryDeletionTask(context, oldTablePath));
+                }
+            }
+
+            Path currentPath = tableAndMore.getCurrentLocation()
+                    .orElseThrow(() -> new IllegalArgumentException("location should be present for alter table"));
+            Path targetPath = new Path(targetLocation);
+            if (!targetPath.equals(currentPath)) {
+                renameDirectory(
+                        context,
+                        hdfsEnvironment,
+                        currentPath,
+                        targetPath,
+                        () -> cleanUpTasksForAbort.add(new DirectoryCleanUpTask(context, targetPath, true)));
+            }
+            // Partition alter must happen regardless of whether original and current location is the same
+            // because metadata might change: e.g. storage format, column types, etc
+            alterTableOperations.add(new AlterTableOperation(tableAndMore.getTable(), oldTable, tableAndMore.getPrincipalPrivileges()));
+
+            updateStatisticsOperations.add(new UpdateStatisticsOperation(
+                    new SchemaTableName(table.getDatabaseName(), table.getTableName()),
+                    Optional.empty(),
+                    tableAndMore.getStatisticsUpdate(),
+                    false));
         }
 
         private void prepareAddTable(HdfsContext context, TableAndMore tableAndMore)
@@ -1243,7 +1299,8 @@ public class SemiTransactionalHiveMetastore
             // Otherwise,
             // * Remember we will need to delete the location of the old partition at the end if transaction successfully commits
             if (targetLocation.equals(oldPartitionLocation)) {
-                Path oldPartitionStagingPath = new Path(oldPartitionPath.getParent(), "_temp_" + oldPartitionPath.getName() + "_" + context.getQueryId());
+                String queryId = context.getQueryId().orElseThrow(() -> new IllegalArgumentException("query ID not present"));
+                Path oldPartitionStagingPath = new Path(oldPartitionPath.getParent(), "_temp_" + oldPartitionPath.getName() + "_" + queryId);
                 renameDirectory(
                         context,
                         hdfsEnvironment,
@@ -1423,6 +1480,13 @@ public class SemiTransactionalHiveMetastore
             }
         }
 
+        private void executeAlterTableOperations()
+        {
+            for (AlterTableOperation alterTableOperation : alterTableOperations) {
+                alterTableOperation.run(delegate);
+            }
+        }
+
         private void executeAlterPartitionOperations()
         {
             for (AlterPartitionOperation alterPartitionOperation : alterPartitionOperations) {
@@ -1471,6 +1535,18 @@ public class SemiTransactionalHiveMetastore
                 }
                 catch (Throwable throwable) {
                     logCleanupFailure(throwable, "failed to rollback: %s", addTableOperation.getDescription());
+                }
+            }
+        }
+
+        private void undoAlterTableOperations()
+        {
+            for (AlterTableOperation alterTableOperation : alterTableOperations) {
+                try {
+                    alterTableOperation.undo(delegate);
+                }
+                catch (Throwable throwable) {
+                    logCleanupFailure(throwable, "failed to rollback: %s", alterTableOperation.getDescription());
                 }
             }
         }
@@ -2528,6 +2604,46 @@ public class SemiTransactionalHiveMetastore
                 return;
             }
             metastore.dropTable(newTable.getDatabaseName(), newTable.getTableName(), false);
+        }
+    }
+
+    private static class AlterTableOperation
+    {
+        private final Table newTable;
+        private final Table oldTable;
+        private final PrincipalPrivileges principalPrivileges;
+        private boolean undo;
+
+        public AlterTableOperation(Table newTable, Table oldTable, PrincipalPrivileges principalPrivileges)
+        {
+            this.newTable = requireNonNull(newTable, "newTable is null");
+            this.oldTable = requireNonNull(oldTable, "oldTable is null");
+            this.principalPrivileges = requireNonNull(principalPrivileges, "principalPrivileges is null");
+            checkArgument(newTable.getDatabaseName().equals(oldTable.getDatabaseName()));
+            checkArgument(newTable.getTableName().equals(oldTable.getTableName()));
+        }
+
+        public String getDescription()
+        {
+            return format(
+                    "alter table %s.%s",
+                    newTable.getDatabaseName(),
+                    newTable.getTableName());
+        }
+
+        public void run(ExtendedHiveMetastore metastore)
+        {
+            undo = true;
+            metastore.replaceTable(newTable.getDatabaseName(), newTable.getTableName(), newTable, principalPrivileges);
+        }
+
+        public void undo(ExtendedHiveMetastore metastore)
+        {
+            if (!undo) {
+                return;
+            }
+
+            metastore.replaceTable(oldTable.getDatabaseName(), oldTable.getTableName(), oldTable, principalPrivileges);
         }
     }
 
