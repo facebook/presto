@@ -268,7 +268,8 @@ public class HivePageSourceProvider
                 ImmutableList.of(),
                 split.getPartitionSchemaDifference(),
                 path,
-                split.getTableBucketNumber());
+                split.getTableBucketNumber(),
+                split.getFileSize());
 
         Optional<BucketAdaptation> bucketAdaptation = split.getBucketConversion().map(conversion -> toBucketAdaptation(conversion, columnMappings, split.getTableBucketNumber(), mapping -> mapping.getHiveColumnHandle().getHiveColumnIndex()));
 
@@ -380,7 +381,8 @@ public class HivePageSourceProvider
                 bucketConversion.map(BucketConversion::getBucketColumnHandles).orElse(ImmutableList.of()),
                 partitionSchemaDifference,
                 path,
-                tableBucketNumber);
+                tableBucketNumber,
+                fileSize);
 
         Set<Integer> outputIndices = hiveColumns.stream()
                 .map(HiveColumnHandle::getHiveColumnIndex)
@@ -661,7 +663,8 @@ public class HivePageSourceProvider
                 List<HiveColumnHandle> requiredInterimColumns,
                 Map<Integer, Column> partitionSchemaDifference,
                 Path path,
-                OptionalInt bucketNumber)
+                OptionalInt bucketNumber,
+                long fileSize)
         {
             Map<String, HivePartitionKey> partitionKeysByName = uniqueIndex(partitionKeys, HivePartitionKey::getName);
             int regularIndex = 0;
@@ -699,7 +702,7 @@ public class HivePageSourceProvider
                 else {
                     columnMappings.add(prefilled(
                             column,
-                            getPrefilledColumnValue(column, partitionKeysByName.get(column.getName()), path, bucketNumber),
+                            getPrefilledColumnValue(column, partitionKeysByName.get(column.getName()), path, bucketNumber, fileSize),
                             coercionFrom));
                 }
             }
