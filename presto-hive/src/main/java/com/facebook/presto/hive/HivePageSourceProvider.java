@@ -191,6 +191,7 @@ public class HivePageSourceProvider
                 hiveSplit.getStart(),
                 hiveSplit.getLength(),
                 hiveSplit.getFileSize(),
+                hiveSplit.getFileModifiedTime(),
                 hiveSplit.getStorage(),
                 splitContext.getDynamicFilterPredicate().map(filter -> filter.transform(handle -> (HiveColumnHandle) handle).intersect(effectivePredicate)).orElse(effectivePredicate),
                 selectedColumns,
@@ -269,7 +270,8 @@ public class HivePageSourceProvider
                 split.getPartitionSchemaDifference(),
                 path,
                 split.getTableBucketNumber(),
-                split.getFileSize());
+                split.getFileSize(),
+                split.getFileModifiedTime());
 
         Optional<BucketAdaptation> bucketAdaptation = split.getBucketConversion().map(conversion -> toBucketAdaptation(conversion, columnMappings, split.getTableBucketNumber(), mapping -> mapping.getHiveColumnHandle().getHiveColumnIndex()));
 
@@ -336,6 +338,7 @@ public class HivePageSourceProvider
             long start,
             long length,
             long fileSize,
+            long fileModifiedTime,
             Storage storage,
             TupleDomain<HiveColumnHandle> effectivePredicate,
             List<HiveColumnHandle> hiveColumns,
@@ -382,7 +385,8 @@ public class HivePageSourceProvider
                 partitionSchemaDifference,
                 path,
                 tableBucketNumber,
-                fileSize);
+                fileSize,
+                fileModifiedTime);
 
         Set<Integer> outputIndices = hiveColumns.stream()
                 .map(HiveColumnHandle::getHiveColumnIndex)
@@ -664,7 +668,8 @@ public class HivePageSourceProvider
                 Map<Integer, Column> partitionSchemaDifference,
                 Path path,
                 OptionalInt bucketNumber,
-                long fileSize)
+                long fileSize,
+                long fileModifiedTime)
         {
             Map<String, HivePartitionKey> partitionKeysByName = uniqueIndex(partitionKeys, HivePartitionKey::getName);
             int regularIndex = 0;
@@ -702,7 +707,7 @@ public class HivePageSourceProvider
                 else {
                     columnMappings.add(prefilled(
                             column,
-                            getPrefilledColumnValue(column, partitionKeysByName.get(column.getName()), path, bucketNumber, fileSize),
+                            getPrefilledColumnValue(column, partitionKeysByName.get(column.getName()), path, bucketNumber, fileSize, fileModifiedTime),
                             coercionFrom));
                 }
             }

@@ -47,6 +47,7 @@ public class HiveSplit
     private final long start;
     private final long length;
     private final long fileSize;
+    private final long fileModifiedTime;
     private final Storage storage;
     private final List<HivePartitionKey> partitionKeys;
     private final List<HostAddress> addresses;
@@ -75,6 +76,7 @@ public class HiveSplit
             @JsonProperty("start") long start,
             @JsonProperty("length") long length,
             @JsonProperty("fileSize") long fileSize,
+            @JsonProperty("fileModifiedTime") long fileModifiedTime,
             @JsonProperty("storage") Storage storage,
             @JsonProperty("partitionKeys") List<HivePartitionKey> partitionKeys,
             @JsonProperty("addresses") List<HostAddress> addresses,
@@ -118,6 +120,7 @@ public class HiveSplit
         this.start = start;
         this.length = length;
         this.fileSize = fileSize;
+        this.fileModifiedTime = fileModifiedTime;
         this.storage = storage;
         this.partitionKeys = ImmutableList.copyOf(partitionKeys);
         this.addresses = ImmutableList.copyOf(addresses);
@@ -175,6 +178,12 @@ public class HiveSplit
     public long getFileSize()
     {
         return fileSize;
+    }
+
+    @JsonProperty
+    public long getFileModifiedTime()
+    {
+        return fileModifiedTime;
     }
 
     @JsonProperty
