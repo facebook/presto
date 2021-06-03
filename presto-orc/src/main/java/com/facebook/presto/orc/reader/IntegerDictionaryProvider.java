@@ -21,9 +21,12 @@ import com.facebook.presto.orc.stream.InputStreamSources;
 import com.facebook.presto.orc.stream.LongInputStream;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.DICTIONARY_DATA;
 import static io.airlift.slice.SizeOf.sizeOf;
+import static com.google.common.base.Preconditions.checkArgument;
 import static java.util.Objects.requireNonNull;
 
 public class IntegerDictionaryProvider
@@ -31,11 +34,25 @@ public class IntegerDictionaryProvider
     private final InputStreamSources dictionaryStreamSources;
     private final OrcLocalMemoryContext memoryUsage;
     private long totalBytes = 0;
+    private final Map<Integer, DictionaryEntry> sharedDictionaries;
+
+    class DictionaryEntry
+    {
+        DictionaryEntry(long[] values, int size)
+        {
+            this.values = values;
+            this.size = size;
+        }
+
+        public final long[] values;
+        public final int size;
+    }
 
     public IntegerDictionaryProvider(InputStreamSources dictionaryStreamSources, OrcLocalMemoryContext memoryUsage)
     {
         this.dictionaryStreamSources = requireNonNull(dictionaryStreamSources, "dictionaryStreamSources is null");
         this.memoryUsage = requireNonNull(memoryUsage, "memoryUsage is null");
+        this.sharedDictionaries = new HashMap<>();
     }
 
     /**
@@ -53,7 +70,22 @@ public class IntegerDictionaryProvider
             throws IOException
     {
         InputStreamSource<LongInputStream> dictionaryDataStream = dictionaryStreamSources.getInputStreamSource(streamDescriptor, DICTIONARY_DATA, LongInputStream.class);
-        return loadDictionary(streamDescriptor, requireNonNull(dictionaryDataStream), dictionary, items);
+
+        if (streamDescriptor.getSequence() == 0 || requireNonNull(dictionaryDataStream).openStream() != null) {
+            return loadDictionary(streamDescriptor, dictionaryDataStream, dictionary, items);
+        }
+
+        // Try fetching shared dictionaries
+        DictionaryEntry entry = sharedDictionaries.get(streamDescriptor.getStreamId());
+        if (entry == null) {
+            StreamDescriptor sharedDictionaryStreamDescriptor = streamDescriptor.dupWithSequence(0);
+            InputStreamSource<LongInputStream> sharedDictionaryDataStream = dictionaryStreamSources.getInputStreamSource(sharedDictionaryStreamDescriptor, DICTIONARY_DATA, LongInputStream.class);
+            entry = new DictionaryEntry(loadDictionary(streamDescriptor, sharedDictionaryDataStream, dictionary, items), items);
+            sharedDictionaries.put(sharedDictionaryStreamDescriptor.getStreamId(), entry);
+        }
+
+        checkArgument(entry.size == items, String.format("Shared dictionary size mismatch for stream: %s", streamDescriptor));
+        return entry.values;
     }
 
     private long[] loadDictionary(StreamDescriptor streamDescriptor, InputStreamSource<LongInputStream> dictionaryDataStream, long[] dictionaryBuffer, int items)
