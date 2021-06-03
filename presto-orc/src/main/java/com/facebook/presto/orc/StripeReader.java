@@ -217,7 +217,7 @@ public class StripeReader
                         selectedRowGroups,
                         columnEncodings);
 
-                return new Stripe(stripe.getNumberOfRows(), columnEncodings, rowGroups, dictionaryStreamSources);
+                return new Stripe(stripe.getNumberOfRows(), columnEncodings, rowGroups, dictionaryStreamSources, systemMemoryUsage);
             }
             catch (InvalidCheckpointException e) {
                 // The ORC file contains a corrupt checkpoint stream
@@ -276,7 +276,7 @@ public class StripeReader
         }
         RowGroup rowGroup = new RowGroup(0, 0, stripe.getNumberOfRows(), minAverageRowBytes, new InputStreamSources(builder.build()));
 
-        return new Stripe(stripe.getNumberOfRows(), columnEncodings, ImmutableList.of(rowGroup), dictionaryStreamSources);
+        return new Stripe(stripe.getNumberOfRows(), columnEncodings, ImmutableList.of(rowGroup), dictionaryStreamSources, systemMemoryUsage);
     }
 
     private StripeEncryptionGroup getStripeEncryptionGroup(DwrfDataEncryptor decryptor, Slice encryptedGroup, Collection<Integer> columns, OrcAggregatedMemoryContext systemMemoryUsage)

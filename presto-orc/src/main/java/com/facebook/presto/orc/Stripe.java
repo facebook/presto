@@ -14,6 +14,7 @@
 package com.facebook.presto.orc;
 
 import com.facebook.presto.orc.metadata.ColumnEncoding;
+import com.facebook.presto.orc.reader.IntegerDictionaryProvider;
 import com.facebook.presto.orc.stream.InputStreamSources;
 import com.google.common.collect.ImmutableList;
 
@@ -29,13 +30,15 @@ public class Stripe
     private final Map<Integer, ColumnEncoding> columnEncodings;
     private final List<RowGroup> rowGroups;
     private final InputStreamSources dictionaryStreamSources;
+    private final IntegerDictionaryProvider integerDictionaryProvider;
 
-    public Stripe(long rowCount, Map<Integer, ColumnEncoding> columnEncodings, List<RowGroup> rowGroups, InputStreamSources dictionaryStreamSources)
+    public Stripe(long rowCount, Map<Integer, ColumnEncoding> columnEncodings, List<RowGroup> rowGroups, InputStreamSources dictionaryStreamSources, OrcAggregatedMemoryContext systemMemoryUsage)
     {
         this.rowCount = rowCount;
         this.columnEncodings = requireNonNull(columnEncodings, "columnEncodings is null");
         this.rowGroups = ImmutableList.copyOf(requireNonNull(rowGroups, "rowGroups is null"));
         this.dictionaryStreamSources = requireNonNull(dictionaryStreamSources, "dictionaryStreamSources is null");
+        this.integerDictionaryProvider = new IntegerDictionaryProvider(this.dictionaryStreamSources, systemMemoryUsage.newOrcLocalMemoryContext(IntegerDictionaryProvider.class.getSimpleName()));
     }
 
     public long getRowCount()
@@ -56,6 +59,11 @@ public class Stripe
     public InputStreamSources getDictionaryStreamSources()
     {
         return dictionaryStreamSources;
+    }
+
+    public IntegerDictionaryProvider getIntegerDictionaryProvider()
+    {
+        return integerDictionaryProvider;
     }
 
     @Override

@@ -16,7 +16,6 @@ package com.facebook.presto.orc.reader;
 import com.facebook.presto.common.block.Block;
 import com.facebook.presto.common.block.BlockLease;
 import com.facebook.presto.common.type.Type;
-import com.facebook.presto.orc.OrcCorruptionException;
 import com.facebook.presto.orc.OrcLocalMemoryContext;
 import com.facebook.presto.orc.StreamDescriptor;
 import com.facebook.presto.orc.Stripe;
@@ -35,7 +34,6 @@ import java.util.Optional;
 
 import static com.facebook.presto.orc.array.Arrays.ensureCapacity;
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.DATA;
-import static com.facebook.presto.orc.metadata.Stream.StreamKind.DICTIONARY_DATA;
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.IN_DICTIONARY;
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.PRESENT;
 import static com.facebook.presto.orc.reader.SelectiveStreamReaders.initializeOutputPositions;
@@ -66,7 +64,7 @@ public class LongDictionarySelectiveStreamReader
     @Nullable
     private BooleanInputStream presentStream;
 
-    private InputStreamSource<LongInputStream> dictionaryDataStreamSource = missingStreamSource(LongInputStream.class);
+    private IntegerDictionaryProvider dictionaryProvider;
     private int dictionarySize;
     private long[] dictionary = new long[0];
     private byte[] dictionaryFilterStatus;
@@ -275,15 +273,8 @@ public class LongDictionarySelectiveStreamReader
     {
         // read the dictionary
         if (!dictionaryOpen && dictionarySize > 0) {
-            if (dictionary.length < dictionarySize) {
-                dictionary = new long[dictionarySize];
-            }
+            dictionary = dictionaryProvider.getDictionary(streamDescriptor, dictionary, dictionarySize);
 
-            LongInputStream dictionaryStream = dictionaryDataStreamSource.openStream();
-            if (dictionaryStream == null) {
-                throw new OrcCorruptionException(streamDescriptor.getOrcDataSourceId(), "Dictionary is not empty but data stream is not present");
-            }
-            dictionaryStream.nextLongVector(dictionarySize, dictionary);
             if (filter != null && !nonDeterministicFilter) {
                 dictionaryFilterStatus = ensureCapacity(dictionaryFilterStatus, dictionarySize);
                 Arrays.fill(dictionaryFilterStatus, 0, dictionarySize, FILTER_NOT_EVALUATED);
@@ -321,7 +312,7 @@ public class LongDictionarySelectiveStreamReader
     @Override
     public void startStripe(Stripe stripe)
     {
-        dictionaryDataStreamSource = stripe.getDictionaryStreamSources().getInputStreamSource(streamDescriptor, DICTIONARY_DATA, LongInputStream.class);
+        dictionaryProvider = stripe.getIntegerDictionaryProvider();
         dictionarySize = stripe.getColumnEncodings().get(streamDescriptor.getStreamId())
                 .getColumnEncoding(streamDescriptor.getSequence())
                 .getDictionarySize();
@@ -374,7 +365,6 @@ public class LongDictionarySelectiveStreamReader
 
         dataStreamSource = null;
         dataStream = null;
-        dictionaryDataStreamSource = null;
 
         systemMemoryContext.close();
     }

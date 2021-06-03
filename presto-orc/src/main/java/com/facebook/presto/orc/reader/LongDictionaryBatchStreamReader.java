@@ -35,7 +35,6 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.DATA;
-import static com.facebook.presto.orc.metadata.Stream.StreamKind.DICTIONARY_DATA;
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.IN_DICTIONARY;
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.PRESENT;
 import static com.facebook.presto.orc.reader.ReaderUtils.verifyStreamType;
@@ -59,7 +58,6 @@ public class LongDictionaryBatchStreamReader
     @Nullable
     private BooleanInputStream presentStream;
 
-    private InputStreamSource<LongInputStream> dictionaryDataStreamSource = missingStreamSource(LongInputStream.class);
     private int dictionarySize;
     private long[] dictionary = new long[0];
 
@@ -67,6 +65,7 @@ public class LongDictionaryBatchStreamReader
     @Nullable
     private BooleanInputStream inDictionaryStream;
 
+    private IntegerDictionaryProvider dictionaryProvider;
     private InputStreamSource<LongInputStream> dataStreamSource;
     @Nullable
     private LongInputStream dataStream;
@@ -183,16 +182,7 @@ public class LongDictionaryBatchStreamReader
     {
         // read the dictionary
         if (!dictionaryOpen && dictionarySize > 0) {
-            if (dictionary.length < dictionarySize) {
-                dictionary = new long[dictionarySize];
-                systemMemoryContext.setBytes(sizeOf(dictionary));
-            }
-
-            LongInputStream dictionaryStream = dictionaryDataStreamSource.openStream();
-            if (dictionaryStream == null) {
-                throw new OrcCorruptionException(streamDescriptor.getOrcDataSourceId(), "Dictionary is not empty but data stream is not present");
-            }
-            dictionaryStream.next(dictionary, dictionarySize);
+            dictionary = dictionaryProvider.getDictionary(streamDescriptor, dictionary, dictionarySize);
         }
         dictionaryOpen = true;
 
@@ -206,7 +196,7 @@ public class LongDictionaryBatchStreamReader
     @Override
     public void startStripe(Stripe stripe)
     {
-        dictionaryDataStreamSource = stripe.getDictionaryStreamSources().getInputStreamSource(streamDescriptor, DICTIONARY_DATA, LongInputStream.class);
+        dictionaryProvider = stripe.getIntegerDictionaryProvider();
         dictionarySize = stripe.getColumnEncodings().get(streamDescriptor.getStreamId())
                 .getColumnEncoding(streamDescriptor.getSequence())
                 .getDictionarySize();
