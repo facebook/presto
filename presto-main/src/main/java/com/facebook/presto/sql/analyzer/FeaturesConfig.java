@@ -182,6 +182,7 @@ public class FeaturesConfig
     private boolean checkAccessControlOnUtilizedColumnsOnly;
     private boolean skipRedundantSort = true;
     private boolean isAllowWindowOrderByLiterals = true;
+    private boolean isEnableRemoveUnreferencedJoin = true;
 
     private boolean spoolingOutputBufferEnabled;
     private DataSize spoolingOutputBufferThreshold = new DataSize(8, MEGABYTE);
@@ -1741,6 +1742,18 @@ public class FeaturesConfig
     public FeaturesConfig setOffsetClauseEnabled(boolean offsetClauseEnabled)
     {
         this.offsetClauseEnabled = offsetClauseEnabled;
+        return this;
+    }
+
+    public boolean isEnableRemoveUnreferencedJoin()
+    {
+        return isEnableRemoveUnreferencedJoin;
+    }
+
+    @Config("enable-remove-unreferenced-join")
+    public FeaturesConfig setEnableRemoveUnreferencedJoin(boolean value)
+    {
+        this.isEnableRemoveUnreferencedJoin = value;
         return this;
     }
 }
