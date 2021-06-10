@@ -13,7 +13,6 @@
  */
 package com.facebook.presto.hive.clustering;
 
-import com.erenck.mortonlib.Morton3D;
 import com.facebook.presto.common.Page;
 import com.facebook.presto.common.block.Block;
 import com.facebook.presto.common.predicate.Marker;
