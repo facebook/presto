@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.resourceGroups;
 
+import com.facebook.presto.spi.resourceGroups.ResourceGroupQueryLimits;
 import com.facebook.presto.spi.resourceGroups.SchedulingPolicy;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -48,6 +49,7 @@ public class ResourceGroupSpec
     private final Optional<Boolean> jmxExport;
     private final Optional<Duration> softCpuLimit;
     private final Optional<Duration> hardCpuLimit;
+    private final ResourceGroupQueryLimits resourceGroupQueryLimits;
 
     @JsonCreator
     public ResourceGroupSpec(
@@ -62,7 +64,10 @@ public class ResourceGroupSpec
             @JsonProperty("subGroups") Optional<List<ResourceGroupSpec>> subGroups,
             @JsonProperty("jmxExport") Optional<Boolean> jmxExport,
             @JsonProperty("softCpuLimit") Optional<Duration> softCpuLimit,
-            @JsonProperty("hardCpuLimit") Optional<Duration> hardCpuLimit)
+            @JsonProperty("hardCpuLimit") Optional<Duration> hardCpuLimit,
+            @JsonProperty("perQueryExecutionTimeLimit") Optional<Duration> perQueryExecutionTimeLimit,
+            @JsonProperty("perQueryTotalMemoryLimit") Optional<DataSize> perQueryTotalMemoryLimit,
+            @JsonProperty("perQueryCpuTimeLimit") Optional<Duration> perQueryCpuTimeLimit)
     {
         this.softCpuLimit = requireNonNull(softCpuLimit, "softCpuLimit is null");
         this.hardCpuLimit = requireNonNull(hardCpuLimit, "hardCpuLimit is null");
@@ -95,6 +100,11 @@ public class ResourceGroupSpec
         }
         this.softMemoryLimit = absoluteSize;
         this.softMemoryLimitFraction = fraction;
+
+        Optional<Duration> executionTimeLimit = requireNonNull(perQueryExecutionTimeLimit, "perQueryExecutionTimeLimit is null");
+        Optional<DataSize> totalMemoryLimit = requireNonNull(perQueryTotalMemoryLimit, "perQueryTotalMemoryLimit is null");
+        Optional<Duration> cpuTimeLimit = requireNonNull(perQueryCpuTimeLimit, "perQueryCpuTimeLimit is null");
+        this.resourceGroupQueryLimits = new ResourceGroupQueryLimits(executionTimeLimit, totalMemoryLimit, cpuTimeLimit);
 
         this.subGroups = ImmutableList.copyOf(requireNonNull(subGroups, "subGroups is null").orElse(ImmutableList.of()));
         Set<ResourceGroupNameTemplate> names = new HashSet<>();
@@ -164,6 +174,11 @@ public class ResourceGroupSpec
         return hardCpuLimit;
     }
 
+    public ResourceGroupQueryLimits getResourceGroupQueryLimits()
+    {
+        return resourceGroupQueryLimits;
+    }
+
     @Override
     public boolean equals(Object other)
     {
@@ -184,7 +199,8 @@ public class ResourceGroupSpec
                 subGroups.equals(that.subGroups) &&
                 jmxExport.equals(that.jmxExport) &&
                 softCpuLimit.equals(that.softCpuLimit) &&
-                hardCpuLimit.equals(that.hardCpuLimit));
+                hardCpuLimit.equals(that.hardCpuLimit) &&
+                resourceGroupQueryLimits.equals(that.resourceGroupQueryLimits));
     }
 
     // Subgroups not included, used to determine whether a group needs to be reconfigured
@@ -202,7 +218,8 @@ public class ResourceGroupSpec
                 schedulingWeight.equals(other.schedulingWeight) &&
                 jmxExport.equals(other.jmxExport) &&
                 softCpuLimit.equals(other.softCpuLimit) &&
-                hardCpuLimit.equals(other.hardCpuLimit));
+                hardCpuLimit.equals(other.hardCpuLimit) &&
+                resourceGroupQueryLimits.equals(other.resourceGroupQueryLimits));
     }
 
     @Override
@@ -219,7 +236,8 @@ public class ResourceGroupSpec
                 subGroups,
                 jmxExport,
                 softCpuLimit,
-                hardCpuLimit);
+                hardCpuLimit,
+                resourceGroupQueryLimits);
     }
 
     @Override
@@ -236,6 +254,7 @@ public class ResourceGroupSpec
                 .add("jmxExport", jmxExport)
                 .add("softCpuLimit", softCpuLimit)
                 .add("hardCpuLimit", hardCpuLimit)
+                .add("resourceGroupQueryLimits", resourceGroupQueryLimits)
                 .toString();
     }
 }

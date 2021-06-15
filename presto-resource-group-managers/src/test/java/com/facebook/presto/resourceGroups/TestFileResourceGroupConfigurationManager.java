@@ -101,9 +101,10 @@ public class TestFileResourceGroupConfigurationManager
         ResourceGroupId globalId = new ResourceGroupId("global");
         ResourceGroup global = new TestingResourceGroup(globalId);
         manager.configure(global, new SelectionContext<>(globalId, new VariableMap(ImmutableMap.of("USER", "user"))));
-        assertEquals(global.getSoftMemoryLimit(), new DataSize(1, MEGABYTE));
-        assertEquals(global.getSoftCpuLimit(), new Duration(1, HOURS));
-        assertEquals(global.getHardCpuLimit(), new Duration(1, DAYS));
+        assertEquals(global.getResourceGroupQueryLimits(), new ResourceGroupQueryLimits(Optional.of(
+                        new Duration(1, HOURS)),
+                        Optional.of(new DataSize(1, MEGABYTE)),
+                        Optional.of(new Duration(1, HOURS))));
         assertEquals(global.getCpuQuotaGenerationMillisPerSecond(), 1000 * 24);
         assertEquals(global.getMaxQueuedQueries(), 1000);
         assertEquals(global.getHardConcurrencyLimit(), 100);

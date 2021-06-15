@@ -16,6 +16,7 @@ package com.facebook.presto.resourceGroups.db;
 import com.facebook.presto.resourceGroups.ResourceGroupNameTemplate;
 import com.facebook.presto.resourceGroups.ResourceGroupSpec;
 import com.google.common.collect.ImmutableList;
+import io.airlift.units.DataSize;
 import io.airlift.units.Duration;
 import org.jdbi.v3.core.mapper.RowMapper;
 import org.jdbi.v3.core.statement.StatementContext;
@@ -39,6 +40,9 @@ public class ResourceGroupSpecBuilder
     private final Optional<Boolean> jmxExport;
     private final Optional<Duration> softCpuLimit;
     private final Optional<Duration> hardCpuLimit;
+    private final Optional<Duration> perQueryExecutionTimeLimit;
+    private final Optional<DataSize> perQueryTotalMemoryLimit;
+    private final Optional<Duration> perQueryCpuTimeLimit;
     private final Optional<Long> parentId;
     private final ImmutableList.Builder<ResourceGroupSpec> subGroups = ImmutableList.builder();
 
@@ -54,6 +58,9 @@ public class ResourceGroupSpecBuilder
             Optional<Boolean> jmxExport,
             Optional<String> softCpuLimit,
             Optional<String> hardCpuLimit,
+            Optional<String> perQueryExecutionTimeLimit,
+            Optional<String> perQueryTotalMemoryLimit,
+            Optional<String> perQueryCpuTimeLimit,
             Optional<Long> parentId)
     {
         this.id = id;
@@ -67,6 +74,9 @@ public class ResourceGroupSpecBuilder
         this.jmxExport = requireNonNull(jmxExport, "jmxExport is null");
         this.softCpuLimit = requireNonNull(softCpuLimit, "softCpuLimit is null").map(Duration::valueOf);
         this.hardCpuLimit = requireNonNull(hardCpuLimit, "hardCpuLimit is null").map(Duration::valueOf);
+        this.perQueryExecutionTimeLimit = requireNonNull(perQueryExecutionTimeLimit, "perQueryExecutionTimeLimit is null").map(Duration::valueOf);
+        this.perQueryTotalMemoryLimit = requireNonNull(perQueryTotalMemoryLimit, "perQueryTotalMemoryLimit is null").map(DataSize::valueOf);
+        this.perQueryCpuTimeLimit = requireNonNull(perQueryCpuTimeLimit, "perQueryCpuTimeLimit is null").map(Duration::valueOf);
         this.parentId = parentId;
     }
 
@@ -114,7 +124,10 @@ public class ResourceGroupSpecBuilder
                 Optional.of(subGroups.build()),
                 jmxExport,
                 softCpuLimit,
-                hardCpuLimit);
+                hardCpuLimit,
+                perQueryExecutionTimeLimit,
+                perQueryTotalMemoryLimit,
+                perQueryCpuTimeLimit);
     }
 
     public static class Mapper
@@ -144,6 +157,9 @@ public class ResourceGroupSpecBuilder
             }
             Optional<String> softCpuLimit = Optional.ofNullable(resultSet.getString("soft_cpu_limit"));
             Optional<String> hardCpuLimit = Optional.ofNullable(resultSet.getString("hard_cpu_limit"));
+            Optional<String> perQueryExecutionTimeLimit = Optional.ofNullable(resultSet.getString("per_query_execution_time_limit"));
+            Optional<String> perQueryTotalMemoryLimit = Optional.ofNullable(resultSet.getString("per_query_total_memory_limit"));
+            Optional<String> perQueryCpuTimeLimit = Optional.ofNullable(resultSet.getString("per_query_cpu_time_limit"));
             Optional<Long> parentId = Optional.of(resultSet.getLong("parent"));
             if (resultSet.wasNull()) {
                 parentId = Optional.empty();
@@ -160,6 +176,9 @@ public class ResourceGroupSpecBuilder
                     jmxExport,
                     softCpuLimit,
                     hardCpuLimit,
+                    perQueryExecutionTimeLimit,
+                    perQueryTotalMemoryLimit,
+                    perQueryCpuTimeLimit,
                     parentId);
         }
     }
