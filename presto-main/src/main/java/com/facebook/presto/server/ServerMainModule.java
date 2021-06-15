@@ -111,6 +111,7 @@ import com.facebook.presto.operator.TableCommitContext;
 import com.facebook.presto.operator.index.IndexJoinLookupStats;
 import com.facebook.presto.resourcemanager.ClusterStatusSender;
 import com.facebook.presto.resourcemanager.ForResourceManager;
+import com.facebook.presto.resourcemanager.MemoryManagerService;
 import com.facebook.presto.resourcemanager.RandomResourceManagerAddressSelector;
 import com.facebook.presto.resourcemanager.ResourceManagerClient;
 import com.facebook.presto.resourcemanager.ResourceManagerClusterStatusSender;
@@ -350,6 +351,7 @@ public class ServerMainModule
                 .bindDriftClient(ResourceManagerClient.class, ForResourceManager.class)
                 .withAddressSelector((addressSelectorBinder, annotation, prefix) ->
                         addressSelectorBinder.bind(AddressSelector.class).annotatedWith(annotation).to(RandomResourceManagerAddressSelector.class));
+        newOptionalBinder(binder, MemoryManagerService.class);
         install(installModuleIf(
                 ServerConfig.class,
                 ServerConfig::isResourceManagerEnabled,
@@ -385,7 +387,9 @@ public class ServerMainModule
                         return listeningDecorator(executor);
                     }
                 },
-                moduleBinder -> moduleBinder.bind(ClusterStatusSender.class).toInstance(execution -> {})));
+                moduleBinder -> {
+                    moduleBinder.bind(ClusterStatusSender.class).toInstance(execution -> {});
+                }));
 
         FeaturesConfig featuresConfig = buildConfigObject(FeaturesConfig.class);
         FeaturesConfig.TaskSpillingStrategy taskSpillingStrategy = featuresConfig.getTaskSpillingStrategy();
