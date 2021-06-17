@@ -70,7 +70,7 @@ public final class MortonCode
             return indices.get(0);
         }
         else if (2 == indices.size()) {
-            return interleaveBits(indices.get(0), indices.get(1));
+            return interleaveTightBits(indices.get(0), indices.get(1));
         }
         else {
             return (int) codec.encode(
@@ -87,6 +87,58 @@ public final class MortonCode
 
             result |= (maskedFirst << i);
             result |= (maskedSecond << (i + 1));
+        }
+        return result;
+    }
+
+    public static int interleaveTightBits(int first, int second)
+    {
+        // Assume the highest set position is not larger than 16.
+        int highestSetPositionForFirst = getHighestSetBitPosition(first);
+        int highestSetPositionForSecond = getHighestSetBitPosition(second);
+
+        int result = 0;
+        int i = 0;
+        while (highestSetPositionForFirst > 0 && highestSetPositionForSecond > 0) {
+            int maskedFirst = (first & (1 << i));
+            int maskedSecond = (second & (1 << i));
+
+            result |= (maskedFirst << i);
+            result |= (maskedSecond << (i + 1));
+
+            ++i;
+            --highestSetPositionForFirst;
+            --highestSetPositionForSecond;
+        }
+
+        if (highestSetPositionForFirst > 0) {
+            result = copyBits(result, first, i * 2, i);
+        }
+        if (highestSetPositionForSecond > 0) {
+            result = copyBits(result, second, i * 2, i);
+        }
+        return result;
+    }
+
+    public static int getHighestSetBitPosition(int value)
+    {
+        int position = 0;
+        while (value != 0) {
+            value = value >> 1;
+            position++;
+        }
+        return position;
+    }
+
+    public static int copyBits(int result, int value, int resultIndex, int valueIndex)
+    {
+        // Assumption: the value is not larger than 65535.
+        for (int i = valueIndex; i < 16; ++i) {
+            int masked = value & (1 << i);
+            if(masked > 0) {
+                result = result | (1 << resultIndex);
+            }
+            resultIndex++;
         }
         return result;
     }

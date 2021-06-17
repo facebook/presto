@@ -261,4 +261,22 @@ public class TestMortonCode
         assertEquals(MortonCode.interleaveBits(2, 1), 6);
         assertEquals(MortonCode.interleaveBits(10, 10), 204);
     }
+
+    @Test
+    public void testGetHighestSetBitPosition()
+    {
+        assertEquals(MortonCode.getHighestSetBitPosition(1), 1);
+        assertEquals(MortonCode.getHighestSetBitPosition(2), 2);
+        assertEquals(MortonCode.getHighestSetBitPosition(4), 3);
+        assertEquals(MortonCode.getHighestSetBitPosition(32768), 16);
+    }
+
+    @Test
+    public void testAppendBits()
+    {
+        assertEquals(MortonCode.copyBits(0, 1, 0, 0), 1);
+        assertEquals(MortonCode.copyBits(1, 2, 1, 1), 3);
+        assertEquals(MortonCode.copyBits(1, 8, 1, 3), 3);
+        assertEquals(MortonCode.copyBits(2, 2, 2, 0), 10);
+    }
 }
