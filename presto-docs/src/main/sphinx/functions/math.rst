@@ -117,6 +117,17 @@ Mathematical Functions
     The a, b parameters must be positive real numbers and value v must be a real value.
     The value v must lie on the interval [0, 1].
 
+.. function:: inverse_t_cdf(df, p) -> double
+
+    Compute the inverse of the Student's t cdf with given degrees of freedom for the cumulative
+    probability (p): P(N < n). The degrees of freedom must be a positive real value.
+    The probability p must lie on the interval [0, 1].
+
+.. function:: t_cdf(df, v) -> double
+
+    Compute the Student's t cdf with given degrees of freedom:  P(N < v; df).
+    The degrees of freedom must be a positive real number and value v must be a real value.
+
 .. function:: ln(x) -> double
 
     Returns the natural logarithm of ``x``.

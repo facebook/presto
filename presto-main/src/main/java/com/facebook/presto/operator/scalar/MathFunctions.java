@@ -34,6 +34,7 @@ import org.apache.commons.math3.distribution.BetaDistribution;
 import org.apache.commons.math3.distribution.BinomialDistribution;
 import org.apache.commons.math3.distribution.ChiSquaredDistribution;
 import org.apache.commons.math3.distribution.PoissonDistribution;
+import org.apache.commons.math3.distribution.TDistribution;
 import org.apache.commons.math3.special.Erf;
 
 import java.math.BigDecimal;
@@ -786,6 +787,27 @@ public final class MathFunctions
         checkCondition(lambda > 0, INVALID_FUNCTION_ARGUMENT, "lambda must be greater than 0");
         PoissonDistribution distribution = new PoissonDistribution(lambda);
         return distribution.cumulativeProbability((int) value);
+    }
+
+    @Description("inverse of Student's t cdf given degrees of freedom and probability")
+    @ScalarFunction
+    @SqlType(StandardTypes.DOUBLE)
+    public static double inverseTCdf(
+        checkCondition(df > 0, INVALID_FUNCTION_ARGUMENT, "df must be > 0");
+        TDistribution distribution = new TDistribution(null, df, TDistribution.DEFAULT_INVERSE_ABSOLUTE_ACCURACY);
+        return distribution.inverseCumulativeProbability(p);
+    }
+
+    @Description("Student's t cdf given degrees of freedom and value")
+    @ScalarFunction
+    @SqlType(StandardTypes.DOUBLE)
+    public static double tCdf(
+            @SqlType(StandardTypes.DOUBLE) double df,
+            @SqlType(StandardTypes.DOUBLE) double value)
+    {
+        checkCondition(df > 0, INVALID_FUNCTION_ARGUMENT, "df must be > 0");
+        TDistribution distribution = new TDistribution(null, df, TDistribution.DEFAULT_INVERSE_ABSOLUTE_ACCURACY);
+        return distribution.cumulativeProbability(value);
     }
 
     @Description("round to nearest integer")
