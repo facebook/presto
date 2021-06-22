@@ -217,7 +217,7 @@ public class StripeReader
                         selectedRowGroups,
                         columnEncodings);
 
-                return new Stripe(stripe.getNumberOfRows(), columnEncodings, rowGroups, dictionaryStreamSources);
+                return new Stripe(stripe.getNumberOfRows(), columnEncodings, rowGroups, dictionaryStreamSources, systemMemoryUsage);
             }
             catch (InvalidCheckpointException e) {
                 // The ORC file contains a corrupt checkpoint stream
@@ -276,7 +276,7 @@ public class StripeReader
         }
         RowGroup rowGroup = new RowGroup(0, 0, stripe.getNumberOfRows(), minAverageRowBytes, new InputStreamSources(builder.build()));
 
-        return new Stripe(stripe.getNumberOfRows(), columnEncodings, ImmutableList.of(rowGroup), dictionaryStreamSources);
+        return new Stripe(stripe.getNumberOfRows(), columnEncodings, ImmutableList.of(rowGroup), dictionaryStreamSources, systemMemoryUsage);
     }
 
     private StripeEncryptionGroup getStripeEncryptionGroup(DwrfDataEncryptor decryptor, Slice encryptedGroup, Collection<Integer> columns, OrcAggregatedMemoryContext systemMemoryUsage)
@@ -302,6 +302,11 @@ public class StripeReader
     {
         boolean hasRowGroupDictionary = false;
         for (Stream stream : streams) {
+            // Includes shared dictionary streams. For the case when we don't support shared dictionary
+            // we might want to either exclude it or change assumption about the required
+            // encodings.
+            // TODO: ideally also check that EITHER sequence 0 or the rest exists. Throws corruption
+            // otherwise.
             if (includedOrcColumns.contains(stream.getColumn())) {
                 includedStreams.put(new StreamId(stream), stream);
 
