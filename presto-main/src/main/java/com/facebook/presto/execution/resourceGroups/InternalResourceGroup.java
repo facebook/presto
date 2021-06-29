@@ -748,6 +748,7 @@ public class InternalResourceGroup
         synchronized (root) {
             runningQueries.add(query);
             InternalResourceGroup group = this;
+            query.setResourceGroupQueryLimits(group.getResourceGroupQueryLimits());
             while (group.parent.isPresent()) {
                 group.parent.get().descendantRunningQueries++;
                 group.parent.get().dirtySubGroups.add(group);

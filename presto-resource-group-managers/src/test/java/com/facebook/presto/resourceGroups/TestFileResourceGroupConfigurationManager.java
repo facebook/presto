@@ -32,7 +32,6 @@ import static com.facebook.presto.spi.resourceGroups.SchedulingPolicy.WEIGHTED;
 import static com.google.common.io.Resources.getResource;
 import static io.airlift.units.DataSize.Unit.MEGABYTE;
 import static java.lang.String.format;
-import static java.util.concurrent.TimeUnit.DAYS;
 import static java.util.concurrent.TimeUnit.HOURS;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.testng.Assert.assertEquals;
@@ -101,10 +100,9 @@ public class TestFileResourceGroupConfigurationManager
         ResourceGroupId globalId = new ResourceGroupId("global");
         ResourceGroup global = new TestingResourceGroup(globalId);
         manager.configure(global, new SelectionContext<>(globalId, new VariableMap(ImmutableMap.of("USER", "user"))));
-        assertEquals(global.getResourceGroupQueryLimits(), new ResourceGroupQueryLimits(Optional.of(
-                        new Duration(1, HOURS)),
-                        Optional.of(new DataSize(1, MEGABYTE)),
-                        Optional.of(new Duration(1, HOURS))));
+        assertEquals(global.getResourceGroupQueryLimits().getPerQueryExecutionTimeLimit(), Optional.of(new Duration(1, HOURS)));
+        assertEquals(global.getResourceGroupQueryLimits().getPerQueryTotalMemoryLimit(), Optional.of(new DataSize(1, MEGABYTE)));
+        assertEquals(global.getResourceGroupQueryLimits().getPerQueryCpuTimeLimit(), Optional.of(new Duration(1, HOURS)));
         assertEquals(global.getCpuQuotaGenerationMillisPerSecond(), 1000 * 24);
         assertEquals(global.getMaxQueuedQueries(), 1000);
         assertEquals(global.getHardConcurrencyLimit(), 100);
@@ -121,6 +119,9 @@ public class TestFileResourceGroupConfigurationManager
         assertEquals(sub.getSchedulingPolicy(), null);
         assertEquals(sub.getSchedulingWeight(), 5);
         assertEquals(sub.getJmxExport(), false);
+        assertEquals(sub.getResourceGroupQueryLimits().getPerQueryExecutionTimeLimit(), Optional.empty());
+        assertEquals(sub.getResourceGroupQueryLimits().getPerQueryTotalMemoryLimit(), Optional.empty());
+        assertEquals(sub.getResourceGroupQueryLimits().getPerQueryCpuTimeLimit(), Optional.empty());
     }
 
     @Test
