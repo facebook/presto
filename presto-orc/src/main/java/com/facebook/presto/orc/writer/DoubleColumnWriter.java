@@ -142,7 +142,7 @@ public class DoubleColumnWriter
     }
 
     @Override
-    public List<StreamDataOutput> getIndexStreams()
+    public List<StreamDataOutput> getIndexStreams(Optional<List<BooleanStreamCheckpoint>> dwrfFlatMapStreamCheckpoints)
             throws IOException
     {
         checkState(closed);
@@ -156,7 +156,8 @@ public class DoubleColumnWriter
             ColumnStatistics columnStatistics = rowGroupColumnStatistics.get(groupId);
             DoubleStreamCheckpoint dataCheckpoint = dataCheckpoints.get(groupId);
             Optional<BooleanStreamCheckpoint> presentCheckpoint = presentCheckpoints.map(checkpoints -> checkpoints.get(groupId));
-            List<Integer> positions = createDoubleColumnPositionList(compressed, dataCheckpoint, presentCheckpoint);
+            Optional<BooleanStreamCheckpoint> dwrfFlatMapCheckpoint = dwrfFlatMapStreamCheckpoints.map(checkpoints -> checkpoints.get(groupId));
+            List<Integer> positions = createDoubleColumnPositionList(compressed, dataCheckpoint, presentCheckpoint, dwrfFlatMapCheckpoint);
             rowGroupIndexes.add(new RowGroupIndex(positions, columnStatistics));
         }
 
@@ -168,9 +169,11 @@ public class DoubleColumnWriter
     private static List<Integer> createDoubleColumnPositionList(
             boolean compressed,
             DoubleStreamCheckpoint dataCheckpoint,
-            Optional<BooleanStreamCheckpoint> presentCheckpoint)
+            Optional<BooleanStreamCheckpoint> presentCheckpoint,
+            Optional<BooleanStreamCheckpoint> dwrfFlatMapCheckpoint)
     {
         ImmutableList.Builder<Integer> positionList = ImmutableList.builder();
+        dwrfFlatMapCheckpoint.ifPresent(booleanStreamCheckpoint -> positionList.addAll(booleanStreamCheckpoint.toPositionList(compressed)));
         presentCheckpoint.ifPresent(booleanStreamCheckpoint -> positionList.addAll(booleanStreamCheckpoint.toPositionList(compressed)));
         positionList.addAll(dataCheckpoint.toPositionList(compressed));
         return positionList.build();
