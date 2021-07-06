@@ -93,10 +93,26 @@ public class TempStorageManager
     public void loadTempStorages()
             throws IOException
     {
-        ImmutableMap.Builder<String, Map<String, String>> storageProperties = ImmutableMap.builder();
+        loadTempStorages(ImmutableMap.of());
+    }
+
+    public TempStorage getTempStorage(String name)
+    {
+        TempStorage tempStorage = loadedTempStorages.get(name);
+        checkState(tempStorage != null, "tempStorage %s was not loaded", name);
+
+        return tempStorage;
+    }
+
+    public void loadTempStorages(Map<String, Map<String, String>> storageProperties)
+            throws IOException
+    {
+        if (!tempStorageLoading.compareAndSet(false, true)) {
+            return;
+        }
+
         // Always load local temp storage
-        addTempStorageFactory(new LocalTempStorage.Factory());
-        storageProperties.put(
+        loadTempStorage(
                 LocalTempStorage.NAME,
                 // TODO: Local temp storage should be configurable
                 ImmutableMap.of(
@@ -108,18 +124,9 @@ public class TempStorageManager
         for (File file : listFiles(TEMP_STORAGE_CONFIGURATION_DIR)) {
             if (file.isFile() && file.getName().endsWith(".properties")) {
                 String name = getNameWithoutExtension(file.getName());
-                Map<String, String> properties = loadProperties(file);
-                storageProperties.put(name, properties);
+                Map<String, String> properties = new HashMap<>(loadProperties(file));
+                loadTempStorage(name, properties);
             }
-        }
-        loadTempStorages(storageProperties.build());
-    }
-
-    public void loadTempStorages(Map<String, Map<String, String>> storageProperties)
-            throws IOException
-    {
-        if (!tempStorageLoading.compareAndSet(false, true)) {
-            return;
         }
 
         storageProperties.entrySet().stream()
