@@ -21,9 +21,14 @@ import java.util.Map;
 public class DefaultThriftHeaderProvider
         implements ThriftHeaderProvider
 {
+    private static String prestoConnectorIdentityUser = "presto_connector_user";
+
     @Override
     public Map<String, String> getHeaders(ConnectorSession session)
     {
+        if (ThriftSessionProperties.shouldSetIdentityThriftHeaders(session)) {
+            return ImmutableMap.of(prestoConnectorIdentityUser, session.getUser());
+        }
         return ImmutableMap.of();
     }
 }
