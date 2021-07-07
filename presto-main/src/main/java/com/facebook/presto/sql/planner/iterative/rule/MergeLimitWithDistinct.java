@@ -32,6 +32,7 @@ public class MergeLimitWithDistinct
     private static final Capture<AggregationNode> CHILD = newCapture();
 
     private static final Pattern<LimitNode> PATTERN = limit()
+            .matching(limit -> !limit.isWithTies())
             .with(source().matching(aggregation().capturedAs(CHILD)
                     .matching(MergeLimitWithDistinct::isDistinct)));
 
@@ -41,6 +42,7 @@ public class MergeLimitWithDistinct
     private static boolean isDistinct(AggregationNode node)
     {
         return node.getAggregations().isEmpty() &&
+                !node.getGroupingKeys().isEmpty() &&
                 node.getOutputVariables().size() == node.getGroupingKeys().size() &&
                 node.getOutputVariables().containsAll(node.getGroupingKeys());
     }

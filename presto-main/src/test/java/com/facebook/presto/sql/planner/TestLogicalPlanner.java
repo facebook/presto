@@ -14,6 +14,7 @@
 package com.facebook.presto.sql.planner;
 
 import com.facebook.presto.Session;
+import com.facebook.presto.common.block.SortOrder;
 import com.facebook.presto.spi.plan.AggregationNode;
 import com.facebook.presto.spi.plan.DistinctLimitNode;
 import com.facebook.presto.spi.plan.FilterNode;
@@ -1372,5 +1373,60 @@ public class TestLogicalPlanner
                                                                 any(
                                                                         tableScan("nation", ImmutableMap.of("name", "name", "regionkey", "regionkey"))))))
                                                 .withAlias("row_num", new RowNumberSymbolMatcher())))));
+    }
+    @Test
+    public void testOrderByFetch()
+    {
+        assertPlan(
+                "SELECT * FROM nation ORDER BY name FETCH FIRST 2 ROWS ONLY",
+                anyTree(
+                        topN(
+                                2,
+                                ImmutableList.of(sort("NAME", ASCENDING, LAST)),
+                                tableScan("nation", ImmutableMap.of(
+                                        "NAME", "name")))));
+    }
+
+    @Test
+    public void testFetch()
+    {
+        assertPlan(
+                "SELECT * FROM nation FETCH FIRST 2 ROWS ONLY",
+                anyTree(
+                        limit(
+                                2,
+                                any(
+                                        tableScan("nation")))));
+    }
+
+    @Test
+    public void testWithTies()
+    {
+        assertPlan(
+                "SELECT name, regionkey FROM nation ORDER BY regionkey FETCH FIRST 6 ROWS WITH TIES",
+                any(
+                        strictProject(
+                                ImmutableMap.of("name", new ExpressionMatcher("name"), "regionkey", new ExpressionMatcher("regionkey")),
+                                filter(
+                                        "rank_num <= BIGINT '6'",
+                                        window(
+                                                windowMatcherBuilder -> windowMatcherBuilder
+                                                        .specification(specification(
+                                                                ImmutableList.of(),
+                                                                ImmutableList.of("regionkey"),
+                                                                ImmutableMap.of("regionkey", SortOrder.ASC_NULLS_LAST)))
+                                                        .addFunction(
+                                                                "rank_num",
+                                                                functionCall(
+                                                                        "rank",
+                                                                        Optional.empty(),
+                                                                        ImmutableList.of())),
+                                                anyTree(
+                                                        sort(
+                                                                ImmutableList.of(sort("regionkey", ASCENDING, LAST)),
+                                                                any(
+                                                                        tableScan(
+                                                                                "nation",
+                                                                                ImmutableMap.of("NAME", "name", "REGIONKEY", "regionkey"))))))))));
     }
 }
