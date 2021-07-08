@@ -15,6 +15,7 @@ package com.facebook.presto.hive.zorder;
 
 import com.google.common.collect.ImmutableList;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -199,7 +200,7 @@ public class ZOrder
      */
     public List<ZAddressRange<Long>> zOrderSearchCurveLongs(List<ZValueRange> ranges)
     {
-        return curveSearcher.zOrderSearchCurveLongs(ranges);
+        return curveSearcher.zOrderSearchCurve(ranges);
     }
 
     /**
@@ -207,7 +208,16 @@ public class ZOrder
      */
     public List<ZAddressRange<Integer>> zOrderSearchCurveIntegers(List<ZValueRange> ranges)
     {
-        return curveSearcher.zOrderSearchCurveIntegers(ranges);
+        List<ZAddressRange<Long>> addressRanges = curveSearcher.zOrderSearchCurve(ranges);
+
+        List<ZAddressRange<Integer>> integerAddressRanges = new ArrayList<>();
+        for (ZAddressRange<Long> addressRange : addressRanges) {
+            checkArgument((addressRange.getMinimumAddress() <= Integer.MAX_VALUE) && (addressRange.getMaximumAddress() <= Integer.MAX_VALUE),
+                    format("The address range [%d, %d] contains addresses greater than integers.", addressRange.getMinimumAddress(), addressRange.getMaximumAddress()));
+
+            integerAddressRanges.add(new ZAddressRange<>(addressRange.getMinimumAddress().intValue(), addressRange.getMaximumAddress().intValue()));
+        }
+        return integerAddressRanges;
     }
 
     /**
