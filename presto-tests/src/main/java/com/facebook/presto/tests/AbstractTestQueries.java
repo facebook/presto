@@ -5776,4 +5776,17 @@ public abstract class AbstractTestQueries
     {
         assertQuerySucceeds("SELECT ARRAY_AGG( x ORDER BY x ASC, x DESC ) FROM ( SELECT 0 as x, 0 AS y)");
     }
+
+    @Test
+    public void testLargeRow()
+    {
+        // We create 2000 element struct which is the max that works for now
+        StringBuilder query = new StringBuilder("ROW(");
+        for (int i = 0; i < 200; i++) {
+            query.append("ROW(obj.name, obj.value, obj.version, obj.matched_content_count, " + (i % 2 == 0 ? "1" : "false") + "),");
+        }
+        query.append("null, 1) AS x,");
+        query.append("1 FROM (SELECT 1) CROSS JOIN (SELECT CAST (NULL AS ROW(name VARCHAR, value VARCHAR, version ROW(x int, y double), matched_content_count BIGINT)) ) AS t1(obj)");
+        assertQuery("SELECT if(random() >= 0, x is not null) FROM (SELECT  " + query.toString() + ")", "select true");
+    }
 }
