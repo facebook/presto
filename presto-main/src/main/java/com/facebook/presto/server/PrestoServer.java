@@ -50,6 +50,10 @@ import com.facebook.presto.sql.analyzer.FeaturesConfig;
 import com.facebook.presto.sql.parser.SqlParserOptions;
 import com.facebook.presto.storage.TempStorageManager;
 import com.facebook.presto.storage.TempStorageModule;
+import com.facebook.presto.ttl.clusterTTLProvider.ClusterTTLProviderManager;
+import com.facebook.presto.ttl.clusterTTLProvider.ClusterTTLProviderManagerModule;
+import com.facebook.presto.ttl.fetcherManager.TTLFetcherManager;
+import com.facebook.presto.ttl.fetcherManager.TTLFetcherManagerModule;
 import com.fasterxml.jackson.module.afterburner.AfterburnerModule;
 import com.google.common.base.Joiner;
 import com.google.common.base.Splitter;
@@ -127,7 +131,9 @@ public class PrestoServer
                 new GracefulShutdownModule(),
                 new WarningCollectorModule(),
                 new TempStorageModule(),
-                new QueryPrerequisitesManagerModule());
+                new QueryPrerequisitesManagerModule(),
+                new TTLFetcherManagerModule(),
+                new ClusterTTLProviderManagerModule());
 
         modules.addAll(getAdditionalModules());
 
@@ -166,6 +172,8 @@ public class PrestoServer
             injector.getInstance(EventListenerManager.class).loadConfiguredEventListener();
             injector.getInstance(TempStorageManager.class).loadTempStorages();
             injector.getInstance(QueryPrerequisitesManager.class).loadQueryPrerequisites();
+            injector.getInstance(TTLFetcherManager.class).loadTTLFetcher();
+            injector.getInstance(ClusterTTLProviderManager.class).loadClusterTTLProvider();
 
             injector.getInstance(Announcer.class).start();
 

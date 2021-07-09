@@ -160,6 +160,10 @@ import com.facebook.presto.sql.tree.Statement;
 import com.facebook.presto.transaction.InMemoryTransactionManager;
 import com.facebook.presto.transaction.TransactionManager;
 import com.facebook.presto.transaction.TransactionManagerConfig;
+import com.facebook.presto.ttl.clusterTTLProvider.ClusterTTLProviderManager;
+import com.facebook.presto.ttl.clusterTTLProvider.ThrowingClusterTTLProviderManager;
+import com.facebook.presto.ttl.fetcherManager.TTLFetcherManager;
+import com.facebook.presto.ttl.fetcherManager.ThrowingTTLFetcherManager;
 import com.facebook.presto.type.TypeDeserializer;
 import com.facebook.presto.version.EmbedVersion;
 import com.google.inject.Binder;
@@ -426,6 +430,8 @@ public class PrestoSparkModule
         binder.bind(ClusterMemoryPoolManager.class).toInstance(((poolId, listener) -> {}));
         binder.bind(QueryPrerequisitesManager.class).in(Scopes.SINGLETON);
         binder.bind(ResourceGroupService.class).to(NoopResourceGroupService.class).in(Scopes.SINGLETON);
+        binder.bind(TTLFetcherManager.class).to(ThrowingTTLFetcherManager.class).in(Scopes.SINGLETON);
+        binder.bind(ClusterTTLProviderManager.class).to(ThrowingClusterTTLProviderManager.class).in(Scopes.SINGLETON);
 
         // TODO: Decouple and remove: required by SessionPropertyDefaults, PluginManager, InternalResourceGroupManager, ConnectorManager
         configBinder(binder).bindConfig(NodeConfig.class);

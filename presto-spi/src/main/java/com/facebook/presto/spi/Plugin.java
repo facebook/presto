@@ -25,6 +25,8 @@ import com.facebook.presto.spi.security.PasswordAuthenticatorFactory;
 import com.facebook.presto.spi.security.SystemAccessControlFactory;
 import com.facebook.presto.spi.session.SessionPropertyConfigurationManagerFactory;
 import com.facebook.presto.spi.storage.TempStorageFactory;
+import com.facebook.presto.spi.ttl.ClusterTTLProviderFactory;
+import com.facebook.presto.spi.ttl.TTLFetcherFactory;
 
 import java.util.Set;
 
@@ -94,6 +96,16 @@ public interface Plugin
     }
 
     default Iterable<QueryPrerequisitesFactory> getQueryPrerequisitesFactories()
+    {
+        return emptyList();
+    }
+
+    default Iterable<TTLFetcherFactory> getTTLFetcherFactories()
+    {
+        return emptyList();
+    }
+
+    default Iterable<ClusterTTLProviderFactory> getClusterTTLProviderFactories()
     {
         return emptyList();
     }

@@ -37,7 +37,11 @@ import com.facebook.presto.spi.security.PasswordAuthenticatorFactory;
 import com.facebook.presto.spi.security.SystemAccessControlFactory;
 import com.facebook.presto.spi.session.SessionPropertyConfigurationManagerFactory;
 import com.facebook.presto.spi.storage.TempStorageFactory;
+import com.facebook.presto.spi.ttl.ClusterTTLProviderFactory;
+import com.facebook.presto.spi.ttl.TTLFetcherFactory;
 import com.facebook.presto.storage.TempStorageManager;
+import com.facebook.presto.ttl.clusterTTLProvider.ClusterTTLProviderManager;
+import com.facebook.presto.ttl.fetcherManager.TTLFetcherManager;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Ordering;
@@ -102,6 +106,8 @@ public class PluginManager
     private final TempStorageManager tempStorageManager;
     private final SessionPropertyDefaults sessionPropertyDefaults;
     private final QueryPrerequisitesManager queryPrerequisitesManager;
+    private final TTLFetcherManager ttlFetcherManager;
+    private final ClusterTTLProviderManager clusterTTLProviderManager;
     private final ArtifactResolver resolver;
     private final File installedPluginsDir;
     private final List<String> plugins;
@@ -122,7 +128,9 @@ public class PluginManager
             BlockEncodingManager blockEncodingManager,
             TempStorageManager tempStorageManager,
             QueryPrerequisitesManager queryPrerequisitesManager,
-            SessionPropertyDefaults sessionPropertyDefaults)
+            SessionPropertyDefaults sessionPropertyDefaults,
+            TTLFetcherManager ttlFetcherManager,
+            ClusterTTLProviderManager clusterTTLProviderManager)
     {
         requireNonNull(nodeInfo, "nodeInfo is null");
         requireNonNull(config, "config is null");
@@ -146,6 +154,8 @@ public class PluginManager
         this.tempStorageManager = requireNonNull(tempStorageManager, "tempStorageManager is null");
         this.queryPrerequisitesManager = requireNonNull(queryPrerequisitesManager, "queryPrerequisitesManager is null");
         this.sessionPropertyDefaults = requireNonNull(sessionPropertyDefaults, "sessionPropertyDefaults is null");
+        this.ttlFetcherManager = requireNonNull(ttlFetcherManager, "ttlFetcherManager is null");
+        this.clusterTTLProviderManager = requireNonNull(clusterTTLProviderManager, "clusterTTLProviderManager is null");
         this.disabledConnectors = requireNonNull(config.getDisabledConnectors(), "disabledConnectors is null");
     }
 
@@ -266,6 +276,16 @@ public class PluginManager
         for (QueryPrerequisitesFactory queryPrerequisitesFactory : plugin.getQueryPrerequisitesFactories()) {
             log.info("Registering query prerequisite factory %s", queryPrerequisitesFactory.getName());
             queryPrerequisitesManager.addQueryPrerequisitesFactory(queryPrerequisitesFactory);
+        }
+
+        for (TTLFetcherFactory ttlFetcherFactory : plugin.getTTLFetcherFactories()) {
+            log.info("Registering TTL fetcher factory %s", ttlFetcherFactory.getName());
+            ttlFetcherManager.addTTLFetcherFactory(ttlFetcherFactory);
+        }
+
+        for (ClusterTTLProviderFactory clusterTTLProviderFactory : plugin.getClusterTTLProviderFactories()) {
+            log.info("Registering Cluster TTL provider factory %s", clusterTTLProviderFactory.getName());
+            clusterTTLProviderManager.addClusterTTLProviderFactory(clusterTTLProviderFactory);
         }
     }
 

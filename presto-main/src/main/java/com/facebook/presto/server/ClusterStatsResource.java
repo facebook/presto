@@ -21,6 +21,7 @@ import com.facebook.presto.metadata.InternalNode;
 import com.facebook.presto.metadata.InternalNodeManager;
 import com.facebook.presto.resourcemanager.ResourceManagerProxy;
 import com.facebook.presto.spi.NodeState;
+import com.facebook.presto.ttl.clusterTTLProvider.ClusterTTLProviderManager;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -60,8 +61,8 @@ public class ClusterStatsResource
     private final boolean isIncludeCoordinator;
     private final boolean resourceManagerEnabled;
     private final ClusterMemoryManager clusterMemoryManager;
-    private final InternalNodeManager internalNodeManager;
     private final Optional<ResourceManagerProxy> proxyHelper;
+    private final ClusterTTLProviderManager clusterTTLProviderManager;
 
     @Inject
     public ClusterStatsResource(
@@ -70,16 +71,16 @@ public class ClusterStatsResource
             InternalNodeManager nodeManager,
             DispatchManager dispatchManager,
             ClusterMemoryManager clusterMemoryManager,
-            InternalNodeManager internalNodeManager,
-            Optional<ResourceManagerProxy> proxyHelper)
+            Optional<ResourceManagerProxy> proxyHelper,
+            ClusterTTLProviderManager clusterTTLProviderManager)
     {
         this.isIncludeCoordinator = requireNonNull(nodeSchedulerConfig, "nodeSchedulerConfig is null").isIncludeCoordinator();
         this.resourceManagerEnabled = requireNonNull(serverConfig, "serverConfig is null").isResourceManagerEnabled();
         this.nodeManager = requireNonNull(nodeManager, "nodeManager is null");
         this.dispatchManager = requireNonNull(dispatchManager, "dispatchManager is null");
         this.clusterMemoryManager = requireNonNull(clusterMemoryManager, "clusterMemoryManager is null");
-        this.internalNodeManager = requireNonNull(internalNodeManager, "internalNodeManager is null");
-        this.proxyHelper = requireNonNull(proxyHelper, "internalNodeManager is null");
+        this.proxyHelper = requireNonNull(proxyHelper, "proxyHelper is null");
+        this.clusterTTLProviderManager = requireNonNull(clusterTTLProviderManager, "clusterTTLProvider is null");
     }
 
     @GET
@@ -164,11 +165,18 @@ public class ClusterStatsResource
                 .build();
     }
 
+    @GET
+    @Path("ttl")
+    public Response getClusterTTL()
+    {
+        return Response.ok().entity(clusterTTLProviderManager.getClusterTTL()).build();
+    }
+
     private void proxyClusterStats(HttpServletRequest servletRequest, AsyncResponse asyncResponse, String xForwardedProto, UriInfo uriInfo)
     {
         try {
             checkState(proxyHelper.isPresent());
-            Iterator<InternalNode> resourceManagers = internalNodeManager.getResourceManagers().iterator();
+            Iterator<InternalNode> resourceManagers = nodeManager.getResourceManagers().iterator();
             if (!resourceManagers.hasNext()) {
                 asyncResponse.resume(Response.status(SERVICE_UNAVAILABLE).build());
                 return;
