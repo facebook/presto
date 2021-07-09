@@ -602,7 +602,7 @@
             <dependency>
                 <groupId>com.facebook.presto.hive</groupId>
                 <artifactId>hive-apache</artifactId>
-                <version>3.0.0-3</version>
+                <version>3.0.0-4</version>
             </dependency>
 
             <dependency>
@@ -1958,6 +1958,7 @@
                                     <exclude>org.alluxio:alluxio-shaded-client</exclude>
                                     <exclude>org.codehaus.plexus:plexus-utils</exclude>
                                     <exclude>com.google.guava:guava</exclude>
+                                    <exclude>javax.annotation:javax.annotation-api</exclude>
                                 </excludes>
                             </requireUpperBoundDeps>
                         </rules>
