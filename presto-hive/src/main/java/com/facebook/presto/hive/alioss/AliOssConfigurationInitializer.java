@@ -11,19 +11,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.fs;
+package com.facebook.presto.hive.alioss;
 
-public class PrestoExtendedFileSystemCache
-        extends PrestoFileSystemCache
+import org.apache.hadoop.conf.Configuration;
+
+public interface AliOssConfigurationInitializer
 {
-    @Override
-    protected FileSystem createPrestoFileSystemWrapper(FileSystem original)
-    {
-        // Don't wrap LocalFileSystem otherwise FileSystem.getLocal(which
-        // do a type cast to LocalFileSystem) would fail
-        if (original instanceof LocalFileSystem) {
-            return original;
-        }
-        return new HadoopExtendedFileSystem(original);
-    }
+    String ALI_OSS_IMPL = "fs.oss.impl";
+    String ALI_OSS_ACCESS_KEY_ID = "fs.oss.accessKeyId";
+    String ALI_OSS_ACCESS_KEY_SECRET = "fs.oss.accessKeySecret";
+    String ALI_OSS_ENDPOINT = "fs.oss.endpoint";
+
+    void updateConfiguration(Configuration config);
 }

@@ -11,19 +11,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.fs;
+package com.facebook.presto.hive.alioss;
 
-public class PrestoExtendedFileSystemCache
-        extends PrestoFileSystemCache
+import com.facebook.airlift.configuration.AbstractConfigurationAwareModule;
+import com.google.inject.Binder;
+import com.google.inject.Scopes;
+
+import static com.facebook.airlift.configuration.ConfigBinder.configBinder;
+
+public class HiveAliOssModule
+        extends AbstractConfigurationAwareModule
 {
     @Override
-    protected FileSystem createPrestoFileSystemWrapper(FileSystem original)
+    protected void setup(Binder binder)
     {
-        // Don't wrap LocalFileSystem otherwise FileSystem.getLocal(which
-        // do a type cast to LocalFileSystem) would fail
-        if (original instanceof LocalFileSystem) {
-            return original;
-        }
-        return new HadoopExtendedFileSystem(original);
+        configBinder(binder).bindConfig(HiveAliOssConfig.class);
+        binder.bind(AliOssConfigurationInitializer.class).to(HiveAliOssConfigurationInitializer.class).in(Scopes.SINGLETON);
     }
 }

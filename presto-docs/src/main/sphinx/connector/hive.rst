@@ -499,6 +499,26 @@ If your workload experiences the error *Timeout waiting for connection from
 pool*, increase the value of both ``hive.s3select-pushdown.max-connections`` and
 the maximum connections configuration for the file system you are using.
 
+Alibaba Cloud OSS Configuration
+-------------------------------
+
+The Hive Connector can read and write tables that are stored in
+`Alibaba Cloud OSS <https://www.aliyun.com/product/oss>`_.
+This is accomplished by having a table or database location that
+uses an OSS prefix rather than an HDFS prefix: ``oss://``.
+
+OSS Configuration Properties
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+============================================ ===============================================
+Property Name                                Description
+============================================ ===============================================
+``hive.alioss.endpoint``                     The OSS service endpoint.
+``hive.alioss.access-key-id``                The AccessKeyId used to access OSS service.
+``hive.alioss.access-key-secret``            The AccessKeySecret used to access OSS service.
+============================================ ===============================================
+
+
 Alluxio Configuration
 ---------------------
 
