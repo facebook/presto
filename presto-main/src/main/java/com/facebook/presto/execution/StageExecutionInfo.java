@@ -14,6 +14,7 @@
 package com.facebook.presto.execution;
 
 import com.facebook.airlift.stats.Distribution.DistributionSnapshot;
+import com.facebook.presto.common.RuntimeStats;
 import com.facebook.presto.operator.BlockedReason;
 import com.facebook.presto.operator.OperatorStats;
 import com.facebook.presto.operator.PipelineStats;
@@ -105,6 +106,7 @@ public class StageExecutionInfo
         Set<BlockedReason> blockedReasons = new HashSet<>();
 
         Map<String, OperatorStats> operatorToStats = new HashMap<>();
+        RuntimeStats mergedRuntimeStats = new RuntimeStats();
         for (TaskInfo taskInfo : taskInfos) {
             TaskState taskState = taskInfo.getTaskStatus().getState();
             if (taskState.isDone()) {
@@ -169,6 +171,9 @@ public class StageExecutionInfo
                     operatorToStats.compute(id, (k, v) -> v == null ? operatorStats : v.add(operatorStats));
                 }
             }
+            mergedRuntimeStats.mergeWith(taskStats.getRuntimeStats());
+            mergedRuntimeStats.addMetricValue("splitCountPerTask", taskStats.getTotalDrivers());
+            mergedRuntimeStats.addMetricValue("taskElapsedTimeNanos", taskStats.getElapsedTimeInNanos());
         }
 
         StageExecutionStats stageExecutionStats = new StageExecutionStats(
@@ -222,7 +227,8 @@ public class StageExecutionInfo
                         totalFullGcSec,
                         (int) (1.0 * totalFullGcSec / fullGcCount)),
 
-                ImmutableList.copyOf(operatorToStats.values()));
+                ImmutableList.copyOf(operatorToStats.values()),
+                mergedRuntimeStats);
 
         return new StageExecutionInfo(
                 state,
