@@ -18,6 +18,7 @@ import com.facebook.presto.SystemSessionProperties;
 import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.security.AccessControl;
 import com.facebook.presto.spi.WarningCollector;
+import com.facebook.presto.sql.SqlFormatterUtil;
 import com.facebook.presto.sql.analyzer.QueryExplainer;
 import com.facebook.presto.sql.parser.SqlParser;
 import com.facebook.presto.sql.tree.AstVisitor;
@@ -77,6 +78,7 @@ public class MaterializedViewOptimizationRewriter
             if (SystemSessionProperties.isQueryOptimizationWithMaterializedViewEnabled(session)) {
                 Optional<Query> optimizeQuery = optimizeQueryUsingMaterializedView(metadata, session, sqlParser, query);
                 if (optimizeQuery.isPresent()) {
+                    System.out.println(SqlFormatterUtil.getFormattedSql(optimizeQuery.get(), sqlParser, Optional.empty()));
                     return optimizeQuery.get();
                 }
             }

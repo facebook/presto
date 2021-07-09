@@ -20,9 +20,11 @@ import com.facebook.presto.spi.ConnectorMaterializedViewDefinition;
 import com.facebook.presto.sql.analyzer.MaterializedViewCandidateExtractor;
 import com.facebook.presto.sql.analyzer.MaterializedViewQueryOptimizer;
 import com.facebook.presto.sql.parser.SqlParser;
+import com.facebook.presto.sql.relational.RowExpressionDomainTranslator;
 import com.facebook.presto.sql.tree.QualifiedName;
 import com.facebook.presto.sql.tree.Query;
 import com.facebook.presto.sql.tree.Table;
+import com.google.common.collect.ImmutableList;
 
 import java.util.HashMap;
 import java.util.List;
@@ -64,7 +66,7 @@ public class MaterializedViewOptimizationRewriterUtils
         Table materializedViewTable = new Table(QualifiedName.of(materializedView.getTable()));
 
         Query materializedViewDefinition = (Query) sqlParser.createStatement(materializedView.getOriginalSql());
-        Query rewriteBaseToViewQuery = (Query) new MaterializedViewQueryOptimizer(materializedViewTable, materializedViewDefinition).rewrite(statement);
+        Query rewriteBaseToViewQuery = (Query) new MaterializedViewQueryOptimizer(metadata, session, sqlParser, new RowExpressionDomainTranslator(metadata), materializedViewTable, materializedViewDefinition).rewrite(statement);
         return rewriteBaseToViewQuery;
     }
 
@@ -72,6 +74,7 @@ public class MaterializedViewOptimizationRewriterUtils
     private static Map<QualifiedObjectName, List<QualifiedObjectName>> getBaseToMaterializedViews()
     {
         Map<QualifiedObjectName, List<QualifiedObjectName>> baseTableToMaterializedViews = new HashMap<>();
+        baseTableToMaterializedViews.put(QualifiedObjectName.valueOf("hive.tpch.lineitem_partitioned_derived_fields"), ImmutableList.of(QualifiedObjectName.valueOf("hive.tpch.lineitem_partitioned_view_derived_fields")));
         return baseTableToMaterializedViews;
     }
 }

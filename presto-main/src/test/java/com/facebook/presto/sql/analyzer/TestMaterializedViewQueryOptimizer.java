@@ -13,21 +13,35 @@
  */
 package com.facebook.presto.sql.analyzer;
 
+import com.facebook.presto.sql.parser.ParsingOptions;
 import com.facebook.presto.sql.parser.SqlParser;
+import com.facebook.presto.sql.relational.RowExpressionDomainTranslator;
 import com.facebook.presto.sql.tree.QualifiedName;
 import com.facebook.presto.sql.tree.Query;
 import com.facebook.presto.sql.tree.Table;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
+import static com.facebook.presto.sql.parser.ParsingOptions.DecimalLiteralTreatment.AS_DOUBLE;
+import static com.facebook.presto.transaction.TransactionBuilder.transaction;
 import static java.lang.String.format;
 import static org.testng.Assert.assertEquals;
 
 public class TestMaterializedViewQueryOptimizer
+        extends AbstractAnalyzerTest
 {
+    private static final ParsingOptions PARSING_OPTIONS = ParsingOptions.builder().setDecimalLiteralTreatment(AS_DOUBLE).build();
     private static final SqlParser SQL_PARSER = new SqlParser();
-    private static final String BASE_TABLE_1 = "base_table_1";
-    private static final String BASE_TABLE_2 = "base_table_2";
+    private static final String BASE_TABLE_1 = "t1";
+    private static final String BASE_TABLE_2 = "t2";
     private static final String VIEW = "view";
+    private RowExpressionDomainTranslator domainTranslator;
+
+    @BeforeClass
+    public void setupDomainTranslator()
+    {
+        domainTranslator = new RowExpressionDomainTranslator(metadata);
+    }
 
     @Test
     public void testWithSimpleQuery()
@@ -247,21 +261,137 @@ public class TestMaterializedViewQueryOptimizer
 
     // TODO: Handle table alias rewrite for view definition and base query https://github.com/prestodb/presto/issues/16404#issue-940248564
     @Test
-    public void testWithTableAliasInView()
+    public void testWithTableAlias()
     {
         String originalViewSql = format("SELECT base1.a, b, c FROM %s base1", BASE_TABLE_1);
         String baseQuerySql = format("SELECT a, c FROM %s", BASE_TABLE_1);
         String expectedRewrittenSql = baseQuerySql;
 
         assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+        // Definition of materialized view
+        originalViewSql = format("SELECT a, b, c FROM %s", BASE_TABLE_1);
+        baseQuerySql = format("SELECT base1.a, c FROM %s base1", BASE_TABLE_1);
+        expectedRewrittenSql = baseQuerySql;
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
     }
 
     @Test
-    public void testWithTableAliasInBaseQuery()
+    public void testDummy()
     {
-        String originalViewSql = format("SELECT a, b, c FROM %s", BASE_TABLE_1);
-        String baseQuerySql = format("SELECT base1.a, c FROM %s base1", BASE_TABLE_1);
-        String expectedRewrittenSql = baseQuerySql;
+        String originalViewSql = format("SELECT a, b, c FROM %s WHERE a = 5 AND c = 9", BASE_TABLE_1);
+        String baseQuerySql = format("SELECT a, c FROM %s WHERE a = 5 AND b = 7 AND c = 9", BASE_TABLE_1);
+        String expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a = 5 AND b = 7 AND c = 9", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+    }
+
+    // Filter Condition Testcase
+    @Test(enabled = true)
+    public void testWithFilterContainment()
+    {
+        String originalViewSql = format("SELECT a, b, c FROM %s WHERE a = 5", BASE_TABLE_1);
+        String baseQuerySql = format("SELECT a, c FROM %s WHERE a = 5", BASE_TABLE_1);
+        String expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a = 5", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        originalViewSql = format("SELECT a, b, c FROM %s WHERE a >= 5", BASE_TABLE_1);
+        baseQuerySql = format("SELECT a, c FROM %s WHERE a = 5", BASE_TABLE_1);
+        expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a = 5", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        originalViewSql = format("SELECT a, b, c FROM %s WHERE a <> 4", BASE_TABLE_1);
+        baseQuerySql = format("SELECT a, c FROM %s WHERE a = 5", BASE_TABLE_1);
+        expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a = 5", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        originalViewSql = format("SELECT a, b, c FROM %s WHERE a > 0", BASE_TABLE_1);
+        baseQuerySql = format("SELECT a, c FROM %s WHERE a = 5 AND a > 0", BASE_TABLE_1);
+        expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a = 5 AND a > 0", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        originalViewSql = format("SELECT a, b, c FROM %s WHERE a = 5", BASE_TABLE_1);
+        baseQuerySql = format("SELECT a, c FROM %s WHERE a = 5 AND b = 7", BASE_TABLE_1);
+        expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a = 5 AND b = 7", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        originalViewSql = format("SELECT a, b, c FROM %s WHERE a = 5 AND c = 9", BASE_TABLE_1);
+        baseQuerySql = format("SELECT a, c FROM %s WHERE a = 5 AND b = 7 AND c = 9", BASE_TABLE_1);
+        expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a = 5 AND b = 7 AND c = 9", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        originalViewSql = format("SELECT a, b, c FROM %s WHERE a = 5 OR a = 7", BASE_TABLE_1);
+        baseQuerySql = format("SELECT a, c FROM %s WHERE a = 5", BASE_TABLE_1);
+        expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a = 5", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        originalViewSql = format("SELECT a, b, c FROM %s WHERE a = 5 OR a = 7", BASE_TABLE_1);
+        baseQuerySql = format("SELECT a, c FROM %s WHERE a = 5", BASE_TABLE_1);
+        expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a = 5", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        originalViewSql = format("SELECT a, b, c FROM %s WHERE a > 3", BASE_TABLE_1);
+        baseQuerySql = format("SELECT a, c FROM %s WHERE a > 5", BASE_TABLE_1);
+        expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a > 5", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        originalViewSql = format("SELECT a, b, c FROM %s WHERE a > 3 AND a < 9", BASE_TABLE_1);
+        baseQuerySql = format("SELECT a, c FROM %s WHERE a > 5 AND a < 7", BASE_TABLE_1);
+        expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a > 5 AND a < 7", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        originalViewSql = format("SELECT a, b, c FROM %s WHERE a < 5 AND b > 9", BASE_TABLE_1);
+        baseQuerySql = format("SELECT a, c FROM %s WHERE a < 3 AND b > 11", BASE_TABLE_1);
+        expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a < 3 AND b > 11", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        originalViewSql = format("SELECT a, b, c FROM %s WHERE a < 5 AND b > 7 AND c <> 9", BASE_TABLE_1);
+        baseQuerySql = format("SELECT a, c FROM %s WHERE a < 3 AND b > 9 AND c = 11", BASE_TABLE_1);
+        expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a < 3 AND b > 9 AND c = 11", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        // Valid cases that does not work.
+        // The reason it did not work is that the DNF conversion is unsuccessful (if you debug it you will see that the conversion is not a valid DNF)
+//        originalViewSql = format("SELECT a, b, c FROM %s WHERE a = 1 AND b = 2 OR b = 3 AND c = 4", BASE_TABLE_1);
+//        baseQuerySql = format("SELECT a, c FROM %s WHERE a = 1 AND b = 2 AND c = 3", BASE_TABLE_1);
+//        expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a = 1 AND b = 2 AND c = 3", VIEW);
+//
+//        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        originalViewSql = format("SELECT a, b, c FROM %s WHERE a > 5 OR a < 7", BASE_TABLE_1);
+        baseQuerySql = format("SELECT a, c FROM %s WHERE a > 3 OR a < 9", BASE_TABLE_1);
+        expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a > 3 OR a < 9", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        originalViewSql = format("SELECT a, b, c FROM %s WHERE a > 3 OR a < 9", BASE_TABLE_1);
+        baseQuerySql = format("SELECT a, c FROM %s WHERE a > 5 OR a < 7", BASE_TABLE_1);
+        expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a > 5 OR a < 7", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        originalViewSql = format("SELECT a, b, c FROM %s WHERE a < 3 OR a > 9", BASE_TABLE_1);
+        baseQuerySql = format("SELECT a, c FROM %s WHERE a < 1 OR a > 11", BASE_TABLE_1);
+        expectedRewrittenSql = format("SELECT a, c FROM %s WHERE a < 1 OR a > 11", VIEW);
+
+        assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
+
+        //Invalid Filter Conditions
+        originalViewSql = format("SELECT a, b, c FROM %s WHERE a > 5", BASE_TABLE_1);
+        baseQuerySql = format("SELECT a, c FROM %s WHERE a > 4", BASE_TABLE_1);
+        expectedRewrittenSql = baseQuerySql;
 
         assertOptimizedQuery(originalViewSql, baseQuerySql, expectedRewrittenSql);
     }
@@ -286,12 +416,17 @@ public class TestMaterializedViewQueryOptimizer
     {
         Table viewTable = new Table(QualifiedName.of(VIEW));
 
-        Query originalViewQuery = (Query) SQL_PARSER.createStatement(originalViewSql);
-        Query baseQuery = (Query) SQL_PARSER.createStatement(baseQuerySql);
-        Query expectedViewQuery = (Query) SQL_PARSER.createStatement(expectedViewSql);
+        Query originalViewQuery = (Query) SQL_PARSER.createStatement(originalViewSql, PARSING_OPTIONS);
+        Query baseQuery = (Query) SQL_PARSER.createStatement(baseQuerySql, PARSING_OPTIONS);
+        Query expectedViewQuery = (Query) SQL_PARSER.createStatement(expectedViewSql, PARSING_OPTIONS);
 
-        Query optimizedBaseToViewQuery = (Query) new MaterializedViewQueryOptimizer(viewTable, originalViewQuery).rewrite(baseQuery);
-
-        assertEquals(optimizedBaseToViewQuery, expectedViewQuery);
+        transaction(transactionManager, accessControl)
+                .singleStatement()
+                .readUncommitted()
+                .readOnly()
+                .execute(CLIENT_SESSION, session -> {
+                    Query optimizedBaseToViewQuery = (Query) new MaterializedViewQueryOptimizer(metadata, session, SQL_PARSER, domainTranslator, viewTable, originalViewQuery).rewrite(baseQuery);
+                    assertEquals(optimizedBaseToViewQuery, expectedViewQuery);
+                });
     }
 }
