@@ -71,7 +71,6 @@ public class TestSqlFunctions
                     "FRANCE", "France",
                     "CHINA", "中国",
                     "भारत", "India")))));
-
     private static final UserDefinedType PERSON = new UserDefinedType(QualifiedObjectName.valueOf("testing.type.person"), new TypeSignature(
             ROW,
             TypeSignatureParameter.of(new NamedTypeSignature(Optional.of(new RowFieldName("first_name", false)), new TypeSignature(VARCHAR))),
@@ -210,6 +209,17 @@ public class TestSqlFunctions
         MaterializedResult rows = computeActual("SELECT testing.test.get_country(ROW('test', 'user', tinyint'20', testing.enum.country.US))");
         assertEquals(rows.getTypes().get(0).getDisplayName(), "testing.enum.country");
         assertEquals(rows.getMaterializedRows().get(0).getFields().get(0), "United States");
+    }
+
+    @Test
+    public void testCreateType()
+    {
+        assertQueryFails("CREATE TYPE testing.type.num AS integer", "Creating distinct types is not yet supported");
+        assertQuerySucceeds("CREATE TYPE testing.type.pair AS (fst integer, snd integer)");
+        assertQuerySucceeds("CREATE TYPE testing.type.pair3 AS (fst testing.type.pair, snd integer)");
+        assertQuerySucceeds("SELECT 1 FROM(SELECT CAST(ROW(CAST(ROW(1,2) AS testing.type.pair), 3) AS testing.type.pair3))");
+        assertQuerySucceeds("CREATE TYPE testing.type.pair3Alt AS (fst ROW(fst integer, snd integer), snd integer)");
+        assertQuerySucceeds("SELECT 1 FROM(SELECT CAST(ROW(ROW(1,2), 3) AS testing.type.pair3Alt))");
     }
 
     @Test
