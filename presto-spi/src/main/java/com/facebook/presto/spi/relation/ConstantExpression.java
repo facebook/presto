@@ -17,6 +17,7 @@ import com.facebook.presto.common.block.Block;
 import com.facebook.presto.common.predicate.Primitives;
 import com.facebook.presto.common.predicate.Utils;
 import com.facebook.presto.common.type.Type;
+import com.facebook.presto.common.type.TypeWithName;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -71,6 +72,9 @@ public final class ConstantExpression
     @JsonProperty
     public Type getType()
     {
+        if (type instanceof TypeWithName) {
+            return ((TypeWithName) type).getType();
+        }
         return type;
     }
 

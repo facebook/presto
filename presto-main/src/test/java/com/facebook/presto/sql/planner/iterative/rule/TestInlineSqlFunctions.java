@@ -17,9 +17,8 @@ import com.facebook.presto.Session;
 import com.facebook.presto.common.CatalogSchemaName;
 import com.facebook.presto.common.QualifiedObjectName;
 import com.facebook.presto.common.type.ArrayType;
-import com.facebook.presto.common.type.BigintType;
 import com.facebook.presto.common.type.IntegerType;
-import com.facebook.presto.common.type.Type;
+import com.facebook.presto.common.type.TypeWithName;
 import com.facebook.presto.functionNamespace.SqlInvokedFunctionNamespaceManagerConfig;
 import com.facebook.presto.functionNamespace.execution.SqlFunctionExecutors;
 import com.facebook.presto.functionNamespace.testing.InMemoryFunctionNamespaceManager;
@@ -31,6 +30,7 @@ import com.facebook.presto.spi.function.Parameter;
 import com.facebook.presto.spi.function.RoutineCharacteristics;
 import com.facebook.presto.spi.function.SqlInvokedFunction;
 import com.facebook.presto.sql.ExpressionUtils;
+import com.facebook.presto.sql.analyzer.SemanticTypeProvider;
 import com.facebook.presto.sql.planner.iterative.rule.test.PlanBuilder;
 import com.facebook.presto.sql.planner.iterative.rule.test.RuleTester;
 import com.facebook.presto.sql.tree.Expression;
@@ -46,6 +46,7 @@ import org.testng.annotations.Test;
 
 import java.util.Map;
 
+import static com.facebook.presto.common.type.BigintType.BIGINT;
 import static com.facebook.presto.common.type.StandardTypes.INTEGER;
 import static com.facebook.presto.common.type.TypeSignature.parseTypeSignature;
 import static com.facebook.presto.spi.function.FunctionImplementationType.THRIFT;
@@ -54,11 +55,11 @@ import static com.facebook.presto.spi.function.RoutineCharacteristics.Determinis
 import static com.facebook.presto.spi.function.RoutineCharacteristics.Language.SQL;
 import static com.facebook.presto.spi.function.RoutineCharacteristics.NullCallClause.RETURNS_NULL_ON_NULL_INPUT;
 import static com.facebook.presto.sql.analyzer.ExpressionAnalyzer.getExpressionTypes;
-import static com.facebook.presto.sql.planner.TypeProvider.viewOf;
 import static com.facebook.presto.sql.planner.assertions.PlanMatchPattern.expression;
 import static com.facebook.presto.sql.planner.assertions.PlanMatchPattern.project;
 import static com.facebook.presto.sql.planner.assertions.PlanMatchPattern.values;
 import static com.facebook.presto.sql.planner.iterative.rule.test.PlanBuilder.assignment;
+import static com.facebook.presto.type.TypeUtils.INTEGER_TYPE;
 import static org.testng.Assert.assertEquals;
 
 public class TestInlineSqlFunctions
@@ -139,19 +140,19 @@ public class TestInlineSqlFunctions
     @Test
     public void testInlineFunction()
     {
-        assertInlined(tester, "unittest.memory.square(x)", "x * x", ImmutableMap.of("x", IntegerType.INTEGER));
+        assertInlined(tester, "unittest.memory.square(x)", "x * x", ImmutableMap.of("x", INTEGER_TYPE));
     }
 
     @Test
     public void testInlineFunctionInsideFunction()
     {
-        assertInlined(tester, "abs(unittest.memory.square(x))", "abs(x * x)", ImmutableMap.of("x", IntegerType.INTEGER));
+        assertInlined(tester, "abs(unittest.memory.square(x))", "abs(x * x)", ImmutableMap.of("x", INTEGER_TYPE));
     }
 
     @Test
     public void testInlineFunctionContainingLambda()
     {
-        assertInlined(tester, "unittest.memory.add_1_int(x)", "transform(x, x -> x + 1)", ImmutableMap.of("x", new ArrayType(IntegerType.INTEGER)));
+        assertInlined(tester, "unittest.memory.add_1_int(x)", "transform(x, x -> x + 1)", ImmutableMap.of("x", new TypeWithName(new ArrayType(IntegerType.INTEGER))));
     }
 
     @Test
@@ -160,7 +161,7 @@ public class TestInlineSqlFunctions
         assertInlined(tester,
                 "unittest.memory.add_1_bigint(x)",
                 "transform(x, x -> x + CAST(1 AS bigint))",
-                ImmutableMap.of("x", new ArrayType(BigintType.BIGINT)));
+                ImmutableMap.of("x", new TypeWithName(new ArrayType(BIGINT))));
     }
 
     @Test
@@ -169,13 +170,13 @@ public class TestInlineSqlFunctions
         assertInlined(tester,
                 "array_sum(x)",
                 "reduce(x, BIGINT '0', (s, x) -> (s + coalesce(x, BIGINT '0')), (s -> s))",
-                ImmutableMap.of("x", new ArrayType(IntegerType.INTEGER)));
+                ImmutableMap.of("x", new TypeWithName(new ArrayType(IntegerType.INTEGER))));
     }
 
     @Test
     public void testNoInlineThriftFunction()
     {
-        assertInlined(tester, "unittest.memory.foo(x)", "unittest.memory.foo(x)", ImmutableMap.of("x", IntegerType.INTEGER));
+        assertInlined(tester, "unittest.memory.foo(x)", "unittest.memory.foo(x)", ImmutableMap.of("x", INTEGER_TYPE));
     }
 
     @Test
@@ -205,18 +206,18 @@ public class TestInlineSqlFunctions
                 .doesNotFire();
     }
 
-    private void assertInlined(RuleTester tester, String inputSql, String expected, Map<String, Type> variableTypes)
+    private void assertInlined(RuleTester tester, String inputSql, String expected, Map<String, TypeWithName> variableTypes)
     {
         Session session = TestingSession.testSessionBuilder()
                 .setSystemProperty("inline_sql_functions", "true")
                 .build();
         Metadata metadata = tester.getMetadata();
         Expression inputSqlExpression = PlanBuilder.expression(inputSql);
-        Map<NodeRef<Expression>, Type> expressionTypes = getExpressionTypes(
+        Map<NodeRef<Expression>, TypeWithName> expressionTypes = getExpressionTypes(
                 session,
                 metadata,
                 tester.getSqlParser(),
-                viewOf(variableTypes),
+                SemanticTypeProvider.viewOf(variableTypes),
                 inputSqlExpression,
                 ImmutableList.of(),
                 WarningCollector.NOOP);
