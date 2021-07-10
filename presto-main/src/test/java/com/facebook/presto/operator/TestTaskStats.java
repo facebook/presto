@@ -72,7 +72,8 @@ public class TestTaskStats
             26,
             27,
 
-            ImmutableList.of(TestPipelineStats.EXPECTED));
+            ImmutableList.of(TestPipelineStats.EXPECTED),
+            null);
 
     @Test
     public void testJson()

@@ -86,7 +86,7 @@ public class TestStageExecutionStats
                     106,
                     107),
 
-            ImmutableList.of());
+            ImmutableList.of(), null);
 
     @Test
     public void testJson()
