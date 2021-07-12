@@ -22,6 +22,7 @@ import com.facebook.presto.server.ResourceGroupInfo;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.resourceGroups.ResourceGroup;
 import com.facebook.presto.spi.resourceGroups.ResourceGroupId;
+import com.facebook.presto.spi.resourceGroups.ResourceGroupQueryLimits;
 import com.facebook.presto.spi.resourceGroups.ResourceGroupState;
 import com.facebook.presto.spi.resourceGroups.SchedulingPolicy;
 import com.google.common.collect.ImmutableList;
@@ -117,6 +118,8 @@ public class InternalResourceGroup
     private SchedulingPolicy schedulingPolicy = FAIR;
     @GuardedBy("root")
     private boolean jmxExport;
+    @GuardedBy("root")
+    private ResourceGroupQueryLimits resourceGroupQueryLimits;
 
     // Live data structures
     // ====================
@@ -593,6 +596,20 @@ public class InternalResourceGroup
         jmxExportListener.accept(this, export);
     }
 
+    @Override
+    public void setResourceGroupQueryLimits(ResourceGroupQueryLimits queryLimits)
+    {
+        synchronized (root) {
+            resourceGroupQueryLimits = queryLimits;
+        }
+    }
+
+    @Override
+    public ResourceGroupQueryLimits getResourceGroupQueryLimits()
+    {
+        return resourceGroupQueryLimits;
+    }
+
     public InternalResourceGroup getOrCreateSubGroup(String name, boolean staticSegment)
     {
         requireNonNull(name, "name is null");
@@ -731,6 +748,7 @@ public class InternalResourceGroup
         synchronized (root) {
             runningQueries.add(query);
             InternalResourceGroup group = this;
+            query.setResourceGroupQueryLimits(group.getResourceGroupQueryLimits());
             while (group.parent.isPresent()) {
                 group.parent.get().descendantRunningQueries++;
                 group.parent.get().dirtySubGroups.add(group);

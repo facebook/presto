@@ -9,6 +9,9 @@
       "hardCpuLimit": "1d",
       "schedulingPolicy": "weighted",
       "jmxExport": true,
+      "perQueryExecutionTimeLimit": "1h",
+      "perQueryTotalMemoryLimit": "1MB",
+      "perQueryCpuTimeLimit": "1h",
       "subGroups": [
         {
           "name": "sub",

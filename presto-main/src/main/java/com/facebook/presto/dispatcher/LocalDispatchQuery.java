@@ -29,6 +29,7 @@ import com.facebook.presto.spi.QueryId;
 import com.facebook.presto.spi.WarningCollector;
 import com.facebook.presto.spi.prerequisites.QueryPrerequisites;
 import com.facebook.presto.spi.prerequisites.QueryPrerequisitesContext;
+import com.facebook.presto.spi.resourceGroups.ResourceGroupQueryLimits;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import io.airlift.units.DataSize;
@@ -68,6 +69,7 @@ public class LocalDispatchQuery
     private final Consumer<DispatchQuery> queryQueuer;
     private final Consumer<QueryExecution> querySubmitter;
     private final SettableFuture<?> submitted = SettableFuture.create();
+    private Optional<ResourceGroupQueryLimits> resourceGroupQueryLimits;
 
     private final boolean retry;
 
@@ -95,6 +97,7 @@ public class LocalDispatchQuery
         this.retry = retry;
         this.queryPrerequisites = requireNonNull(queryPrerequisites, "queryPrerequisites is null");
         this.warningCollector = requireNonNull(stateMachine.getWarningCollector(), "warningCollector is null");
+
         addExceptionCallback(queryExecutionFuture, throwable -> {
             if (stateMachine.transitionToFailed(throwable)) {
                 queryMonitor.queryImmediateFailureEvent(stateMachine.getBasicQueryInfo(Optional.empty()), toFailure(throwable));
@@ -182,6 +185,7 @@ public class LocalDispatchQuery
 
     private void startExecution(QueryExecution queryExecution)
     {
+        queryExecution.setResourceGroupQueryLimits(this.getResourceGroupQueryLimits());
         queryExecutor.execute(() -> {
             if (stateMachine.transitionToDispatching()) {
                 try {
@@ -348,6 +352,18 @@ public class LocalDispatchQuery
     public void addStateChangeListener(StateChangeListener<QueryState> stateChangeListener)
     {
         stateMachine.addStateChangeListener(stateChangeListener);
+    }
+
+    @Override
+    public Optional<ResourceGroupQueryLimits> getResourceGroupQueryLimits()
+    {
+        return resourceGroupQueryLimits;
+    }
+
+    @Override
+    public void setResourceGroupQueryLimits(ResourceGroupQueryLimits queryLimits)
+    {
+        resourceGroupQueryLimits = Optional.ofNullable(queryLimits);
     }
 
     private Optional<QueryExecution> tryGetQueryExecution()
