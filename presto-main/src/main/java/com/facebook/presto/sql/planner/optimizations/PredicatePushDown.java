@@ -80,6 +80,7 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.SystemSessionProperties.isEnableDynamicFiltering;
+import static com.facebook.presto.common.function.OperatorType.BETWEEN;
 import static com.facebook.presto.common.function.OperatorType.EQUAL;
 import static com.facebook.presto.common.function.OperatorType.GREATER_THAN;
 import static com.facebook.presto.common.function.OperatorType.GREATER_THAN_OR_EQUAL;
@@ -625,97 +626,7 @@ public class PredicatePushDown
             Map<String, VariableReferenceExpression> dynamicFilters = ImmutableMap.of();
             List<RowExpression> predicates = ImmutableList.of();
             if (node.getType() == INNER) {
-                // New equiJoinClauses could potentially not contain symbols used in current dynamic filters.
-                // Since we use PredicatePushdown to push dynamic filters themselves,
-                // instead of separate ApplyDynamicFilters rule we derive dynamic filters within PredicatePushdown itself.
-                // Even if equiJoinClauses.equals(node.getCriteria), current dynamic filters may not match equiJoinClauses
-                ImmutableList.Builder<CallExpression> clausesBuilder = ImmutableList.builder();
-                for (JoinNode.EquiJoinClause clause : equiJoinClauses) {
-                    VariableReferenceExpression probeSymbol = clause.getLeft();
-                    VariableReferenceExpression buildSymbol = clause.getRight();
-                    clausesBuilder.add(call(
-                                        EQUAL.name(),
-                                        functionAndTypeManager.resolveOperator(EQUAL, fromTypes(probeSymbol.getType(), buildSymbol.getType())),
-                                        BOOLEAN,
-                                        probeSymbol,
-                                        buildSymbol));
-                }
-
-                for (RowExpression filter : joinFilter) {
-                    if ((filter instanceof CallExpression)) {
-                        CallExpression call = (CallExpression) filter;
-                        List<RowExpression> arguments = call.getArguments();
-
-                        // TODO: support for complex inequalities, e.g. left < right + 10, NOT, LIKE
-                        if (arguments.size() == 3 || arguments.size() == 1) {
-                            continue;
-                        }
-                        checkArgument(arguments.size() == 2, "invalid arguments count: %s", arguments.size());
-
-                        String function = call.getDisplayName();
-                        RowExpression left = arguments.get(0);
-                        RowExpression right = arguments.get(1);
-                        boolean shouldFlip = false;
-                        if (left instanceof VariableReferenceExpression && right instanceof VariableReferenceExpression) {
-                            if (node.getRight().getOutputVariables().contains(left)) {
-                                shouldFlip = true;
-                            }
-                            if (node.getLeft().getOutputVariables().contains(right)) {
-                                shouldFlip = true;
-                            }
-
-                            if (shouldFlip) {
-                                left = arguments.get(1);
-                                right = arguments.get(0);
-                            }
-
-                            OperatorType operator = null;
-                            if (function.equals(LESS_THAN.name())) {
-                                if (shouldFlip) {
-                                    operator = GREATER_THAN_OR_EQUAL;
-                                }
-                                else {
-                                    operator = LESS_THAN;
-                                }
-                            }
-                            if (function.equals(LESS_THAN_OR_EQUAL.name())) {
-                                if (shouldFlip) {
-                                    operator = GREATER_THAN;
-                                }
-                                else {
-                                    operator = LESS_THAN_OR_EQUAL;
-                                }
-                            }
-                            if (function.equals(GREATER_THAN.name())) {
-                                if (shouldFlip) {
-                                    operator = LESS_THAN_OR_EQUAL;
-                                }
-                                else {
-                                    operator = GREATER_THAN;
-                                }
-                            }
-                            if (function.equals(GREATER_THAN_OR_EQUAL.name())) {
-                                if (shouldFlip) {
-                                    operator = LESS_THAN;
-                                }
-                                else {
-                                    operator = GREATER_THAN_OR_EQUAL;
-                                }
-                            }
-
-                            if (operator != null) {
-                                clausesBuilder.add(call(
-                                                    operator.name(),
-                                                    functionAndTypeManager.resolveOperator(operator, fromTypes(left.getType(), right.getType())),
-                                                    BOOLEAN,
-                                                    left,
-                                                    right));
-                            }
-                        }
-                    }
-                }
-
-                List<CallExpression> clauses = clausesBuilder.build();
+                List<CallExpression> clauses = getDynamicFilterClauses(node, equiJoinClauses, joinFilter, functionAndTypeManager);
                 List<VariableReferenceExpression> buildSymbols = clauses.stream()
                         .map(expression -> (VariableReferenceExpression) expression.getArguments().get(1))
                         .collect(Collectors.toList());
@@ -737,6 +648,151 @@ public class PredicatePushDown
                 predicates = predicatesBuilder.build();
             }
             return new DynamicFiltersResult(dynamicFilters, predicates);
+        }
+
+        private static List<CallExpression> getDynamicFilterClauses(
+                JoinNode node,
+                List<JoinNode.EquiJoinClause> equiJoinClauses,
+                List<RowExpression> joinFilter,
+                FunctionAndTypeManager functionAndTypeManager)
+        {
+            // New equiJoinClauses could potentially not contain symbols used in current dynamic filters.
+            // Since we use PredicatePushdown to push dynamic filters themselves,
+            // instead of separate ApplyDynamicFilters rule we derive dynamic filters within PredicatePushdown itself.
+            // Even if equiJoinClauses.equals(node.getCriteria), current dynamic filters may not match equiJoinClauses
+            ImmutableList.Builder<CallExpression> clausesBuilder = ImmutableList.builder();
+            for (JoinNode.EquiJoinClause clause : equiJoinClauses) {
+                VariableReferenceExpression probeSymbol = clause.getLeft();
+                VariableReferenceExpression buildSymbol = clause.getRight();
+                clausesBuilder.add(call(
+                                    EQUAL.name(),
+                                    functionAndTypeManager.resolveOperator(EQUAL, fromTypes(probeSymbol.getType(), buildSymbol.getType())),
+                                    BOOLEAN,
+                                    probeSymbol,
+                                    buildSymbol));
+            }
+
+            for (RowExpression filter : joinFilter) {
+                if ((filter instanceof CallExpression)) {
+                    CallExpression call = (CallExpression) filter;
+                    List<RowExpression> arguments = call.getArguments();
+
+                    // TODO: support for complex inequalities, e.g. left < right + 10, NOT, LIKE
+                    if (arguments.size() == 1) {
+                        continue;
+                    }
+
+                    if (arguments.size() == 3) {
+                        // try convert BETWEEN into GREATER_THAN_OR_EQUAL and LESS_THAN_OR_EQUAL
+                        String function = call.getDisplayName();
+                        if (function.equals(BETWEEN.name()) && arguments.get(0) instanceof VariableReferenceExpression) {
+                            if (arguments.get(1) instanceof VariableReferenceExpression) {
+                                CallExpression callExpression = call(
+                                                                    GREATER_THAN_OR_EQUAL.name(),
+                                                                    functionAndTypeManager.resolveOperator(GREATER_THAN_OR_EQUAL, fromTypes(arguments.get(0).getType(), arguments.get(1).getType())),
+                                                                    BOOLEAN,
+                                                                    arguments.get(0),
+                                                                    arguments.get(1));
+                                Optional<CallExpression> comparisonExpression = getDynamicFilterComparison(node, callExpression, functionAndTypeManager);
+                                if (comparisonExpression.isPresent()) {
+                                    clausesBuilder.add(comparisonExpression.get());
+                                }
+                            }
+                            if (arguments.get(2) instanceof VariableReferenceExpression) {
+                                CallExpression callExpression = call(
+                                                                    LESS_THAN_OR_EQUAL.name(),
+                                                                    functionAndTypeManager.resolveOperator(LESS_THAN_OR_EQUAL, fromTypes(arguments.get(0).getType(), arguments.get(2).getType())),
+                                                                    BOOLEAN,
+                                                                    arguments.get(0),
+                                                                    arguments.get(2));
+                                Optional<CallExpression> comparisonExpression = getDynamicFilterComparison(node, callExpression, functionAndTypeManager);
+                                if (comparisonExpression.isPresent()) {
+                                    clausesBuilder.add(comparisonExpression.get());
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
+                    checkArgument(arguments.size() == 2, "invalid arguments count: %s", arguments.size());
+                    Optional<CallExpression> comparisonExpression = getDynamicFilterComparison(node, call, functionAndTypeManager);
+                    if (comparisonExpression.isPresent()) {
+                        clausesBuilder.add(comparisonExpression.get());
+                    }
+                }
+            }
+            return clausesBuilder.build();
+        }
+
+        private static Optional<CallExpression> getDynamicFilterComparison(
+                JoinNode node,
+                CallExpression call,
+                FunctionAndTypeManager functionAndTypeManager)
+        {
+            String function = call.getDisplayName();
+            List<RowExpression> arguments = call.getArguments();
+            RowExpression left = arguments.get(0);
+            RowExpression right = arguments.get(1);
+            boolean shouldFlip = false;
+            if (!(left instanceof VariableReferenceExpression && right instanceof VariableReferenceExpression)) {
+                return Optional.empty();
+            }
+
+            if (node.getRight().getOutputVariables().contains(left)) {
+                shouldFlip = true;
+            }
+            if (node.getLeft().getOutputVariables().contains(right)) {
+                shouldFlip = true;
+            }
+
+            if (shouldFlip) {
+                left = arguments.get(1);
+                right = arguments.get(0);
+            }
+
+            OperatorType operator = null;
+            if (function.equals(LESS_THAN.name())) {
+                if (shouldFlip) {
+                    operator = GREATER_THAN_OR_EQUAL;
+                }
+                else {
+                    operator = LESS_THAN;
+                }
+            }
+            if (function.equals(LESS_THAN_OR_EQUAL.name())) {
+                if (shouldFlip) {
+                    operator = GREATER_THAN;
+                }
+                else {
+                    operator = LESS_THAN_OR_EQUAL;
+                }
+            }
+            if (function.equals(GREATER_THAN.name())) {
+                if (shouldFlip) {
+                    operator = LESS_THAN_OR_EQUAL;
+                }
+                else {
+                    operator = GREATER_THAN;
+                }
+            }
+            if (function.equals(GREATER_THAN_OR_EQUAL.name())) {
+                if (shouldFlip) {
+                    operator = LESS_THAN;
+                }
+                else {
+                    operator = GREATER_THAN_OR_EQUAL;
+                }
+            }
+
+            if (operator == null) {
+                return Optional.empty();
+            }
+            return Optional.of(call(
+                                operator.name(),
+                                functionAndTypeManager.resolveOperator(operator, fromTypes(left.getType(), right.getType())),
+                                BOOLEAN,
+                                left,
+                                right));
         }
 
         private static DynamicFiltersResult createDynamicFilters(
