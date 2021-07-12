@@ -739,30 +739,6 @@ public class PredicatePushDown
             return new DynamicFiltersResult(dynamicFilters, predicates);
         }
 
-        private static RowExpression createDynamicFilterExpression(
-                String id,
-                VariableReferenceExpression input,
-                FunctionAndTypeManager functionAndTypeManager)
-        {
-            return createDynamicFilterExpression(id, input, functionAndTypeManager, EQUAL.name());
-        }
-
-        private static RowExpression createDynamicFilterExpression(
-                String id,
-                VariableReferenceExpression input,
-                FunctionAndTypeManager functionAndTypeManager,
-                String operator)
-        {
-            return call(
-                    functionAndTypeManager,
-                    DynamicFilters.DynamicFilterPlaceholderFunction.NAME,
-                    BooleanType.BOOLEAN,
-                    ImmutableList.of(
-                            input,
-                            new ConstantExpression(Slices.utf8Slice(operator), VarcharType.VARCHAR),
-                            new ConstantExpression(Slices.utf8Slice(id), VarcharType.VARCHAR)));
-        }
-
         private static DynamicFiltersResult createDynamicFilters(
                 VariableReferenceExpression probeVariable,
                 VariableReferenceExpression buildVariable,
