@@ -20,7 +20,9 @@ import com.facebook.presto.common.predicate.TupleDomain;
 import com.facebook.presto.common.predicate.ValueSet;
 import com.facebook.presto.common.type.DecimalType;
 import com.facebook.presto.common.type.Type;
+import com.facebook.presto.expressions.LogicalRowExpressions;
 import com.facebook.presto.metadata.CastType;
+import com.facebook.presto.metadata.FunctionAndTypeManager;
 import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.spi.function.FunctionHandle;
 import com.facebook.presto.spi.relation.DomainTranslator.ExtractionResult;
@@ -29,6 +31,7 @@ import com.facebook.presto.spi.relation.SpecialFormExpression;
 import com.facebook.presto.spi.relation.VariableReferenceExpression;
 import com.facebook.presto.sql.analyzer.FeaturesConfig;
 import com.facebook.presto.sql.relational.FunctionResolution;
+import com.facebook.presto.sql.relational.RowExpressionDeterminismEvaluator;
 import com.facebook.presto.sql.relational.RowExpressionDomainTranslator;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -70,6 +73,7 @@ import static com.facebook.presto.expressions.LogicalRowExpressions.FALSE_CONSTA
 import static com.facebook.presto.expressions.LogicalRowExpressions.TRUE_CONSTANT;
 import static com.facebook.presto.expressions.LogicalRowExpressions.and;
 import static com.facebook.presto.expressions.LogicalRowExpressions.or;
+import static com.facebook.presto.metadata.FunctionAndTypeManager.createTestFunctionAndTypeManager;
 import static com.facebook.presto.metadata.MetadataManager.createTestMetadataManager;
 import static com.facebook.presto.spi.relation.DomainTranslator.BASIC_COLUMN_EXTRACTOR;
 import static com.facebook.presto.spi.relation.SpecialFormExpression.Form.IN;
@@ -92,6 +96,11 @@ import static org.testng.Assert.fail;
 
 public class TestRowExpressionDomainTranslator
 {
+    private static final VariableReferenceExpression X = new VariableReferenceExpression("x", BIGINT);
+    private static final VariableReferenceExpression Y = new VariableReferenceExpression("y", BIGINT);
+    private static final VariableReferenceExpression Z = new VariableReferenceExpression("z", BIGINT);
+    private static final VariableReferenceExpression X_DOUBLE = new VariableReferenceExpression("x_double", BIGINT);
+    private static final VariableReferenceExpression X_VARCHAR = new VariableReferenceExpression("x_varchar", VARCHAR);
     private static final VariableReferenceExpression C_BIGINT = new VariableReferenceExpression("x1", BIGINT);
     private static final VariableReferenceExpression C_DOUBLE = new VariableReferenceExpression("x2", DOUBLE);
     private static final VariableReferenceExpression C_VARCHAR = new VariableReferenceExpression("x3", VARCHAR);
@@ -124,12 +133,16 @@ public class TestRowExpressionDomainTranslator
 
     private Metadata metadata;
     private RowExpressionDomainTranslator domainTranslator;
+    private FunctionAndTypeManager functionAndTypeManager;
+    private LogicalRowExpressions logicalRowExpressions;
 
     @BeforeClass
     public void setup()
     {
         metadata = createTestMetadataManager();
         domainTranslator = new RowExpressionDomainTranslator(metadata);
+        functionAndTypeManager = createTestFunctionAndTypeManager();
+        logicalRowExpressions = new LogicalRowExpressions(new RowExpressionDeterminismEvaluator(functionAndTypeManager), new FunctionResolution(functionAndTypeManager), functionAndTypeManager);
     }
 
     @AfterClass(alwaysRun = true)
@@ -321,6 +334,317 @@ public class TestRowExpressionDomainTranslator
     {
         assertUnsupportedPredicate(unprocessableExpression1(C_BIGINT));
         assertUnsupportedPredicate(not(unprocessableExpression1(C_BIGINT)));
+    }
+
+    //MV Filter Condition
+    private void assertAAndNegateB(RowExpression A, RowExpression B, boolean expectedState)
+    {
+        // Expected State: if the output domain of A ^ ~B is equal to none
+        RowExpression originalPredicate = and(A, not(B));
+        RowExpression disjunctiveNormalForm = logicalRowExpressions.convertToDisjunctiveNormalForm(originalPredicate);
+        ExtractionResult result = fromPredicate(disjunctiveNormalForm);
+        assertEquals(result.getTupleDomain().equals(TupleDomain.none()), expectedState);
+    }
+
+    @Test
+    public void testDummy()
+    {
+        // Individual test if one of the filter condition is not working (using for debug purpose)
+        RowExpression A;
+        RowExpression B;
+        // A => x <= 3 && x_varchar > "abcd" && x_double = 9.0, B => x < 5 && x_varchar <> "abc" && x_double >= 9.0
+        A = and(and(lessThanOrEqual(X, bigintLiteral(3L)),greaterThan(X_VARCHAR, stringLiteral("abcd"))),equal(X_DOUBLE, doubleLiteral(9.0)));
+        B = and(and(lessThan(X, bigintLiteral(5L)),notEqual(X_VARCHAR, stringLiteral("abc"))),greaterThanOrEqual(X_DOUBLE, doubleLiteral(9.0)));
+        assertAAndNegateB(A, B, true);
+    }
+
+    @Test
+    public void testFilterCondition()
+    {
+        // A => x = 5, B => x = 5
+        RowExpression A = equal(X, bigintLiteral(5L));
+        RowExpression B = equal(X, bigintLiteral(5L));
+        assertAAndNegateB(A, B, true);
+
+        // A => x = 5, B => x >= 5
+        A = equal(X, bigintLiteral(5L));
+        B = greaterThanOrEqual(X, bigintLiteral(5L));
+        assertAAndNegateB(A, B, true);
+
+        // A => x = 5, B => x <> 7
+        A = equal(X, bigintLiteral(5L));
+        B = notEqual(X, bigintLiteral(7L));
+        assertAAndNegateB(A, B, true);
+
+        // A => x = 5 && x > 0, B => x > 0
+        A = or(equal(X, bigintLiteral(5L)),greaterThan(X, bigintLiteral(0L)));
+        B = greaterThan(X, bigintLiteral(0L));
+        assertAAndNegateB(A, B, true);
+
+        // A => x = 5 && y = 7, B => x = 5
+        A = and(equal(X, bigintLiteral(5L)),equal(Y, bigintLiteral(7L)));
+        B = equal(X, bigintLiteral(5L));
+        assertAAndNegateB(A, B, true);
+
+        // A => x = 5 && y = 7 && z = 9, B => x = 5 && z = 9
+        A = and(and(equal(X, bigintLiteral(5L)),equal(Y, bigintLiteral(7L))),equal(Z, bigintLiteral(9L)));
+        B = and(equal(X, bigintLiteral(5L)),equal(Z, bigintLiteral(9L)));
+        assertAAndNegateB(A, B, true);
+
+        // A => x = 5 , B => x = 5 || x = 7
+        A = equal(X, bigintLiteral(5L));
+        B = or(equal(X, bigintLiteral(5L)),equal(X, bigintLiteral(7L)));
+        assertAAndNegateB(A, B, true);
+
+        // A => x > 5, B => x > 3
+        A = greaterThan(X, bigintLiteral(5L));
+        B = greaterThan(X, bigintLiteral(3L));
+        assertAAndNegateB(A, B, true);
+
+        // A => x > 5 && x < 7, B => x > 3 && x < 9
+        A = and(greaterThan(X, bigintLiteral(5L)),lessThan(X, bigintLiteral(7L)));
+        B = and(greaterThan(X, bigintLiteral(3L)),lessThan(X, bigintLiteral(9L)));
+        assertAAndNegateB(A, B, true);
+
+        // A => x < 3 && y > 11, B => x < 5 && y > 9
+        A = and(lessThan(X, bigintLiteral(3L)),greaterThan(Y, bigintLiteral(11L)));
+        B = and(lessThan(X, bigintLiteral(5L)),greaterThan(Y, bigintLiteral(9L)));
+        assertAAndNegateB(A, B, true);
+
+        // A => x < 3 && y > 9 && z = 11, B => x < 5 && y > 7 && z <> 9
+        A = and(and(lessThan(X, bigintLiteral(3L)),greaterThan(Y, bigintLiteral(9L))),equal(Z, bigintLiteral(11L)));
+        B = and(and(lessThan(X, bigintLiteral(5L)),greaterThan(Y, bigintLiteral(7L))),notEqual(Z, bigintLiteral(9L)));
+        assertAAndNegateB(A, B, true);
+
+        // Valid cases that does not work.
+        // The reason it did not work is that the DNF conversion is unsuccessful (if you debug it you will see that the conversion is not a valid DNF)
+//        // A => x = 1 && y = 2 && z = 3, B => x = 1 && y = 2 || y = 3 && z = 4
+//        A = and(and(equal(X, bigintLiteral(1L)),equal(Y, bigintLiteral(2L))),equal(Z, bigintLiteral(3L)));
+//        B = or(and(equal(X, bigintLiteral(1L)),equal(Y, bigintLiteral(2L))),and(equal(Y, bigintLiteral(3L)),equal(Z, bigintLiteral(4L))));
+//        assertAAndNegateB(A, B, true);
+
+        // A => x = 1 && y = 2 && z = 3 || x = 5 && y = 7 && z = 6
+        // B => x = 1 && y = 2 || y = 3 && z = 4 || x = 5 && z = 6
+//        A = or(
+//                and(and(equal(X, bigintLiteral(1L)),equal(Y, bigintLiteral(2L))),equal(Z, bigintLiteral(3L))),
+//                and(and(equal(X, bigintLiteral(5L)),equal(Y, bigintLiteral(7L))),equal(Z, bigintLiteral(6L))));
+//        B = or(
+//                or(
+//                        and(equal(X, bigintLiteral(1L)),equal(Y, bigintLiteral(2L))),
+//                        and(equal(Y, bigintLiteral(3L)),equal(Z, bigintLiteral(4L)))),
+//                and(equal(X, bigintLiteral(5L)),equal(Z, bigintLiteral(6L))));
+//        assertAAndNegateB(A, B, true);
+
+        // A => x > 5 || x < 7, B => x > 3 || x < 9
+        A = or(greaterThan(X, bigintLiteral(5L)),lessThan(X, bigintLiteral(7L)));
+        B = or(greaterThan(X, bigintLiteral(3L)),lessThan(X, bigintLiteral(9L)));
+        assertAAndNegateB(A, B, true);
+
+        // A => x < 3 || x > 9, B => x < 5 || x > 7
+        A = or(lessThan(X, bigintLiteral(3L)),greaterThan(X, bigintLiteral(9L)));
+        B = or(lessThan(X, bigintLiteral(5L)),greaterThan(X, bigintLiteral(7L)));
+        assertAAndNegateB(A, B, true);
+
+        // A => x < 3 || y > 11, B => x < 5 || y > 9
+        A = or(lessThan(X, bigintLiteral(3L)),greaterThan(Y, bigintLiteral(11L)));
+        B = or(lessThan(X, bigintLiteral(5L)),greaterThan(Y, bigintLiteral(9L)));
+        assertAAndNegateB(A, B, true);
+
+        // A => x > 5 && x < 7 || x > 11, B => x > 3 && x < 9 || x > 10
+        A = or(and(greaterThan(X, bigintLiteral(5L)),lessThan(X, bigintLiteral(7L))), greaterThan(X, bigintLiteral(11L)));
+        B = or(and(greaterThan(X, bigintLiteral(3L)),lessThan(X, bigintLiteral(9L))), greaterThan(X, bigintLiteral(10L)));
+        assertAAndNegateB(A, B, true);
+
+        // A => x = 5, B => x > 3
+        A = equal(X, bigintLiteral(5L));
+        B = greaterThan(X, bigintLiteral(3L));
+        assertAAndNegateB(A, B, true);
+
+        // A => x > 5, B => x >= 5
+        A = greaterThan(X, bigintLiteral(5L));
+        B = greaterThanOrEqual(X, bigintLiteral(5L));
+        assertAAndNegateB(A, B, true);
+
+        // A => x = 5, B => x <> 3
+        A = equal(X, bigintLiteral(5L));
+        B = notEqual(X, bigintLiteral(3L));
+        assertAAndNegateB(A, B, true);
+
+        // A => x = 5 || x = 3, B => x <> 4
+        A = or(equal(X, bigintLiteral(5L)),equal(X, bigintLiteral(3L)));
+        B = notEqual(X, bigintLiteral(4L));
+        assertAAndNegateB(A, B, true);
+
+        // A => x = 5 || x = 3, B => x >= 3
+        A = or(equal(X, bigintLiteral(5L)),equal(X, bigintLiteral(3L)));
+        B = greaterThanOrEqual(X, bigintLiteral(3L));
+        assertAAndNegateB(A, B, true);
+
+        // A => x <> 5, B => x > 5 || x < 5
+        A = notEqual(X, bigintLiteral(5L));
+        B = or(greaterThan(X, bigintLiteral(5L)),lessThan(X, bigintLiteral(5L)));
+        assertAAndNegateB(A, B, true);
+
+        // A => x > 5 || x < 5, B => x <> 5
+        A = or(greaterThan(X, bigintLiteral(5L)),lessThan(X, bigintLiteral(5L)));
+        B = notEqual(X, bigintLiteral(5L));
+        assertAAndNegateB(A, B, true);
+
+        // A => x > 5 && x < 5, B => x <> 5
+        // This is an interesting case
+        // There exists no x that fulfill condition A.
+        // However, the logic expression (A ^ ~B) is still false since A is false at the start.
+        // Therefore, there will exist no domain as the result.
+        A = and(greaterThan(X, bigintLiteral(5L)),lessThan(X, bigintLiteral(5L)));
+        B = notEqual(X, bigintLiteral(5L));
+        assertAAndNegateB(A, B, true);
+
+        // A => x = 5.0, B => x = 5.0
+        A = equal(X_DOUBLE, doubleLiteral(5.0));
+        B = greaterThanOrEqual(X_DOUBLE, doubleLiteral(5.0));
+        assertAAndNegateB(A, B, true);
+
+        // A => x > 3.0 || x < 2.9, B => x <> 2.91
+        or(greaterThanOrEqual(X_DOUBLE, doubleLiteral(3.0)),lessThanOrEqual(X_DOUBLE, doubleLiteral(2.9)));
+        A = or(greaterThanOrEqual(X_DOUBLE, doubleLiteral(3.0)),lessThanOrEqual(X_DOUBLE, doubleLiteral(2.9)));
+        B = notEqual(X_DOUBLE, doubleLiteral(2.91));
+        assertAAndNegateB(A, B, true);
+
+        // A => x = 3.1 && y < 7, B => x > 3.0 && y < 9
+        A = and(greaterThan(X_DOUBLE, doubleLiteral(3.1)),lessThan(Y, bigintLiteral(7L)));
+        B = and(greaterThan(X_DOUBLE, doubleLiteral(3.0)),lessThan(Y, bigintLiteral(9L)));
+        assertAAndNegateB(A, B, true);
+
+        // A => x = "test", B => x = "test"
+        A = equal(X_VARCHAR, stringLiteral("test"));
+        B = equal(X_VARCHAR, stringLiteral("test"));
+        assertAAndNegateB(A, B, true);
+
+        // A => x = "test", B => x <> "test2"
+        A = equal(X_VARCHAR, stringLiteral("test"));
+        B = notEqual(X_VARCHAR, stringLiteral("test2"));
+        assertAAndNegateB(A, B, true);
+
+        // A => x <> "test2", B => x <> "test2"
+        A = notEqual(X_VARCHAR, stringLiteral("test2"));
+        B = notEqual(X_VARCHAR, stringLiteral("test2"));
+        assertAAndNegateB(A, B, true);
+
+        // A => x <> "test2", B => x <> "test2"
+        A = notEqual(X_VARCHAR, stringLiteral("test2"));
+        B = notEqual(X_VARCHAR, stringLiteral("test2"));
+        assertAAndNegateB(A, B, true);
+
+        // A => x <> "test1" && x <> "test2", B => x <> "test2"
+        A = and(notEqual(X_VARCHAR, stringLiteral("test1")),notEqual(X_VARCHAR, stringLiteral("test2")));
+        B = notEqual(X_VARCHAR, stringLiteral("test2"));
+        assertAAndNegateB(A, B, true);
+
+        // A => x = "test1" or x = "test2", B => x <> "test3"
+        A = or(equal(X_VARCHAR, stringLiteral("test1")),equal(X_VARCHAR, stringLiteral("test2")));
+        B = notEqual(X_VARCHAR, stringLiteral("test3"));
+        assertAAndNegateB(A, B, true);
+
+        // A => x > "test", B => x <> "test"
+        A = greaterThan(X_VARCHAR, stringLiteral("test"));
+        B = notEqual(X_VARCHAR, stringLiteral("test"));
+        assertAAndNegateB(A, B, true);
+
+        // A => x > "test1", B => x > "test"
+        A = greaterThan(X_VARCHAR, stringLiteral("test1"));
+        B = greaterThan(X_VARCHAR, stringLiteral("test"));
+        assertAAndNegateB(A, B, true);
+
+        // A => x > "abc", B => x > "abb"
+        A = greaterThan(X_VARCHAR, stringLiteral("abc"));
+        B = greaterThan(X_VARCHAR, stringLiteral("abb"));
+        assertAAndNegateB(A, B, true);
+
+        // A => x > "test2", B => x > "test1"
+        A = greaterThan(X_VARCHAR, stringLiteral("test2"));
+        B = greaterThan(X_VARCHAR, stringLiteral("test1"));
+        assertAAndNegateB(A, B, true);
+
+        // A => x > "test", B => x <> "abc"
+        A = greaterThan(X_VARCHAR, stringLiteral("test"));
+        B = notEqual(X_VARCHAR, stringLiteral("abc"));
+        assertAAndNegateB(A, B, true);
+
+        // A => x > "test", B => x <> "abc" && x <> "def"
+        A = greaterThan(X_VARCHAR, stringLiteral("test"));
+        B = and(notEqual(X_VARCHAR, stringLiteral("abc")),notEqual(X_VARCHAR, stringLiteral("abc")));
+        assertAAndNegateB(A, B, true);
+
+        // A => x <= 3 && x_varchar > "abcd" && x_double = 9.0, B => x < 5 && x_varchar <> "abc" && x_double >= 9.0
+        A = and(and(lessThanOrEqual(X, bigintLiteral(3L)),greaterThan(X_VARCHAR, stringLiteral("abcd"))),equal(X_DOUBLE, doubleLiteral(9.0)));
+        B = and(and(lessThan(X, bigintLiteral(5L)),notEqual(X_VARCHAR, stringLiteral("abc"))),greaterThanOrEqual(X_DOUBLE, doubleLiteral(9.0)));
+        assertAAndNegateB(A, B, true);
+
+        // Invalid Filter Conditions
+        // A => x = 5 , B => x = 4
+        A = equal(X, bigintLiteral(5L));
+        B = equal(X, bigintLiteral(4L));
+        assertAAndNegateB(A, B, false);
+
+        // A => x = 5 || x = 7, B => x = 5
+        A = or(equal(X, bigintLiteral(5L)),equal(X, bigintLiteral(7L)));
+        B = equal(X, bigintLiteral(5L));
+        assertAAndNegateB(A, B, false);
+
+        // A => x = 5 || y = 7, B => x = 5
+        A = or(equal(X, bigintLiteral(5L)),equal(Y, bigintLiteral(7L)));
+        B = equal(X, bigintLiteral(5L));
+        assertAAndNegateB(A, B, false);
+
+        // A => x = 5 || x = 7, B => x > 5
+        A = or(equal(X, bigintLiteral(5L)),equal(X, bigintLiteral(7L)));
+        B = greaterThan(X, bigintLiteral(5L));
+        assertAAndNegateB(A, B, false);
+
+        // A => x > 5, B => x > 7
+        A = greaterThan(X, bigintLiteral(5L));
+        B = greaterThan(X, bigintLiteral(7L));
+        assertAAndNegateB(A, B, false);
+
+        // A => x > 5, B => y > 3
+        A = greaterThan(X, bigintLiteral(5L));
+        B = greaterThan(Y, bigintLiteral(3L));
+        assertAAndNegateB(A, B, false);
+
+        // A => x = 5, B => x < 3
+        A = equal(X, bigintLiteral(5L));
+        B = lessThan(X, bigintLiteral(3L));
+        assertAAndNegateB(A, B, false);
+
+        // A => x <> 5, B => x = 5
+        A = notEqual(X, bigintLiteral(5L));
+        B = equal(X, bigintLiteral(5L));
+        assertAAndNegateB(A, B, false);
+
+        // A => x >= 5, B => x > 5
+        A = greaterThanOrEqual(X, bigintLiteral(5L));
+        B = greaterThan(X, bigintLiteral(5L));
+        assertAAndNegateB(A, B, false);
+
+        // A => x <> "test", B => x = "test2"
+        A = notEqual(X_VARCHAR, stringLiteral("test"));
+        B = equal(X_VARCHAR, stringLiteral("test2"));
+        assertAAndNegateB(A, B, false);
+
+        // A => x <> "test1" && x <> "test2", B => x = "test3"
+        A = and(notEqual(X_VARCHAR, stringLiteral("test1")),notEqual(X_VARCHAR, stringLiteral("test2")));
+        B = equal(X_VARCHAR, stringLiteral("test3"));
+        assertAAndNegateB(A, B, false);
+
+        // A => x <> "test1" || x <> "test2", B => x <> "test1"
+        A = or(notEqual(X_VARCHAR, stringLiteral("test1")),notEqual(X_VARCHAR, stringLiteral("test2")));
+        B = notEqual(X_VARCHAR, stringLiteral("test1"));
+        assertAAndNegateB(A, B, false);
+
+        // A => x <> "test1" || x <> "test2", B => x <> "test3"
+        A = or(notEqual(X_VARCHAR, stringLiteral("test1")),notEqual(X_VARCHAR, stringLiteral("test2")));
+        B = notEqual(X_VARCHAR, stringLiteral("test3"));
+        assertAAndNegateB(A, B, false);
     }
 
     @Test
